@@ -1,0 +1,27 @@
+# CLI binary
+aegis
+dist/
+
+# Model weights — never commit these
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+models/
+
+# Config with secrets
+.env
+
+# Go
+vendor/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+harness/.venv/
+
+# OS
+.DS_Store
