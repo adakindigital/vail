@@ -12,7 +12,7 @@ import (
 // Theme holds a named colour palette.
 type Theme struct {
 	Name         string
-	Accent       lipgloss.Color // brand colour — "aegis" label, rules
+	Accent       lipgloss.Color // brand colour — "vail" label, rules
 	User         lipgloss.Color // "you" label
 	Tool         lipgloss.Color // tool call highlights
 	WarnColor    lipgloss.Color // warnings, partial responses
@@ -118,7 +118,7 @@ func (t Theme) AccentText(s string) string { return t.accent(s) }
 // Banner renders the startup screen.
 func (t Theme) Banner(model, themeName, memoryNote string) string {
 	rule := t.accent(strings.Repeat("─", 44))
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true).Render("A E G I S")
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true).Render("V A I L")
 	sub := t.muted("·  AI by Adakin Digital")
 
 	b := strings.Builder{}
