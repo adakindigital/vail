@@ -1,4 +1,4 @@
-// Package ui provides theme-aware terminal styling for the Aegis CLI.
+// Package ui provides theme-aware terminal styling for the Vail CLI.
 // All styled output goes through here — keeps colour logic out of command files.
 package ui
 
@@ -117,15 +117,25 @@ func (t Theme) AccentText(s string) string { return t.accent(s) }
 
 // Banner renders the startup screen.
 func (t Theme) Banner(model, themeName, memoryNote string) string {
-	rule := t.accent(strings.Repeat("─", 44))
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true).Render("V A I L")
-	sub := t.muted("·  AI by Adakin Digital")
+	logo := []string{
+		`██╗   ██╗ █████╗ ██╗██╗     `,
+		`██║   ██║██╔══██╗██║██║     `,
+		`██║   ██║███████║██║██║     `,
+		`╚██╗ ██╔╝██╔══██║██║██║     `,
+		` ╚████╔╝ ██║  ██║██║███████╗`,
+		`  ╚═══╝  ╚═╝  ╚═╝╚═╝╚══════╝`,
+	}
+
+	logoStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	tagline := t.muted("Versatile Artificial Intelligence Layer  ·  Adakin Digital")
 
 	b := strings.Builder{}
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %s\n", rule))
-	b.WriteString(fmt.Sprintf("  %s  %s\n", title, sub))
-	b.WriteString(fmt.Sprintf("  %s\n", rule))
+	for _, line := range logo {
+		b.WriteString(fmt.Sprintf("  %s\n", logoStyle.Render(line)))
+	}
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  %s\n", tagline))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %s  %-14s  %s  %s\n", t.muted("model"), model, t.muted("theme"), themeName))
 	if memoryNote != "" {
@@ -142,7 +152,7 @@ func (t Theme) UserPrompt() string {
 	return fmt.Sprintf("\n  %s\n  %s ", t.userColor("you"), t.muted("›"))
 }
 
-// AegisHeader renders the start of a model response, with context stats.
+// VailHeader renders the start of a model response, with context stats.
 func (t Theme) VailHeader(model string, tokens, maxTokens int) string {
 	label := t.accent("vail")
 	var stats string
@@ -299,7 +309,7 @@ func (t Theme) ModelList(current string) string {
 func (t Theme) InitSuccess(path string) string {
 	b := strings.Builder{}
 	b.WriteString(fmt.Sprintf("\n  %s  %s\n", t.okColor("✓"), path))
-	b.WriteString(fmt.Sprintf("  %s\n\n", t.muted("edit this file — Aegis will load it as context on startup")))
+	b.WriteString(fmt.Sprintf("  %s\n\n", t.muted("edit this file — Vail will load it as context on startup")))
 	return b.String()
 }
 
