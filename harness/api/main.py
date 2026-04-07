@@ -29,6 +29,8 @@ import httpx
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 
+from api.router import select_tier
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger("vail.gateway")
 
@@ -172,13 +174,20 @@ async def chat_completions(request: Request, authorization: str = Header(default
     messages = body.get("messages", [])
     is_stream = body.get("stream", False)
 
+    # Route to the appropriate tier based on heuristics (or honour explicit tier)
+    routed_tier = select_tier(messages, model)
+    if routed_tier != model:
+        log.info("router   %s → %s", model, routed_tier)
+
     # Rewrite the model field to the backend's actual model ID.
     # mlx_lm (and vLLM) use the model field to select which weights to load —
     # sending a tier name like "aegis-lite" causes mlx_lm to try fetching it from HuggingFace.
     if _backend_model_id:
         body = {**body, "model": _backend_model_id}
+    else:
+        body = {**body, "model": routed_tier}
 
-    log.info("request  model=%s  stream=%s", model, is_stream)
+    log.info("request  model=%s  routed=%s  stream=%s", model, routed_tier, is_stream)
     t0 = time.monotonic()
 
     if is_stream:
