@@ -52,14 +52,14 @@ You have two tools. Use them freely and proactively — do not ask permission be
 
 // Context window sizes per model tier (approximate).
 var modelContextWindow = map[string]int{
-	"aegis-lite": 8192,
-	"aegis":      32768,
-	"aegis-pro":  131072,
-	"aegis-max":  131072,
+	"vail-lite": 8192,
+	"vail":      32768,
+	"vail-pro":  131072,
+	"vail-max":  131072,
 }
 
 // validModels is the ordered list of known model tiers.
-var validModels = []string{"aegis-lite", "aegis", "aegis-pro", "aegis-max"}
+var validModels = []string{"vail-lite", "vail", "vail-pro", "vail-max"}
 
 // spinnerFrames for the thinking animation.
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -138,7 +138,7 @@ func handleSlashCommand(
 	if len(cmd) == 0 || !strings.HasPrefix(cmd[0], "/") {
 		// Also handle bare exit/quit without slash
 		if input == "exit" || input == "quit" {
-			fmt.Printf("\n  %s  Goodbye.\n\n", th.AccentText("aegis"))
+			fmt.Printf("\n  %s  Goodbye.\n\n", th.AccentText("vail"))
 			os.Exit(0)
 		}
 		return false
@@ -146,7 +146,7 @@ func handleSlashCommand(
 
 	switch cmd[0] {
 	case "/exit", "/quit":
-		fmt.Printf("\n  %s  Goodbye.\n\n", th.AccentText("aegis"))
+		fmt.Printf("\n  %s  Goodbye.\n\n", th.AccentText("vail"))
 		os.Exit(0)
 
 	case "/clear":

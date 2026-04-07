@@ -6,14 +6,14 @@ Only runs when the client sends a non-explicit model (e.g. "auto" or "vail").
 Explicit tier names (aegis-lite, aegis, aegis-pro) bypass routing entirely.
 
 Tiers:
-    aegis-lite  — Gemma 4 E2B    fast, simple queries
-    aegis       — Gemma 4 26B    default, code, technical
-    aegis-pro   — Gemma 4 31B    long context, deep reasoning
+    vail-lite  — Gemma 4 E2B    fast, simple queries
+    vail       — Gemma 4 26B    default, code, technical
+    vail-pro   — Gemma 4 31B    long context, deep reasoning
 """
 
 import re
 
-EXPLICIT_TIERS = {"aegis-lite", "aegis", "aegis-pro"}
+EXPLICIT_TIERS = {"vail-lite", "vail", "vail-pro", "vail-max"}
 
 # Rough tokens ≈ words × 1.3
 _WORDS_TO_TOKENS = 1.3
@@ -73,16 +73,16 @@ def select_tier(messages: list[dict], requested_model: str) -> str:
 
     # Pro: long context or explicit reasoning request
     if tokens >= _PRO_TOKEN_FLOOR or _PRO_SIGNALS.search(last_user):
-        return "aegis-pro"
+        return "vail-pro"
 
     # Lite: short + no code + matches conversational pattern
     if tokens < _LITE_TOKEN_CEILING and not _CODE_SIGNALS.search(last_user):
         if _LITE_SIGNALS.match(last_user.strip()) or tokens < 20:
-            return "aegis-lite"
+            return "vail-lite"
 
     # Code / technical signals push to standard tier regardless of length
     if _CODE_SIGNALS.search(last_user):
-        return "aegis"
+        return "vail"
 
     # Default
-    return "aegis"
+    return "vail"

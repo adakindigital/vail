@@ -144,7 +144,7 @@ func (t Theme) UserPrompt() string {
 
 // AegisHeader renders the start of a model response, with context stats.
 func (t Theme) VailHeader(model string, tokens, maxTokens int) string {
-	label := t.accent("aegis")
+	label := t.accent("vail")
 	var stats string
 	if maxTokens > 0 && tokens > 0 {
 		pct := tokens * 100 / maxTokens
@@ -277,10 +277,10 @@ func (t Theme) ThemeList(current string) string {
 // ModelList returns the formatted model list.
 func (t Theme) ModelList(current string) string {
 	models := []struct{ name, desc string }{
-		{"aegis-lite", "E2B 4-bit  ·  fast, daily use"},
-		{"aegis", "26B MoE 4-bit  ·  production workhorse"},
-		{"aegis-pro", "31B dense 4-bit  ·  complex reasoning"},
-		{"aegis-max", "31B dense 4-bit  ·  alias for aegis-pro"},
+		{"vail-lite", "E2B 4-bit  ·  fast, daily use"},
+		{"vail", "26B MoE 4-bit  ·  production workhorse"},
+		{"vail-pro", "31B dense 4-bit  ·  complex reasoning"},
+		{"vail-max", "31B dense 4-bit  ·  alias for vail-pro"},
 	}
 	b := strings.Builder{}
 	b.WriteString("\n")

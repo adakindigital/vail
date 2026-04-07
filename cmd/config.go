@@ -35,8 +35,8 @@ var configShowCmd = &cobra.Command{
 var configSetEndpointCmd = &cobra.Command{
 	Use:   "endpoint [url]",
 	Short: "Set the API endpoint (local or cloud)",
-	Example: `  aegis config endpoint http://localhost:8080
-  aegis config endpoint https://api.aegis.adakin.co.za/v1`,
+	Example: `  vail config endpoint http://localhost:8080
+  vail config endpoint https://api.vail.adakindigital.com/v1`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
@@ -55,9 +55,9 @@ var configSetEndpointCmd = &cobra.Command{
 var configSetModelCmd = &cobra.Command{
 	Use:   "model [name]",
 	Short: "Set the active model",
-	Example: `  vail config model aegis-lite-lite
-  vail config model aegis-lite
-  vail config model aegis-lite-pro`,
+	Example: `  vail config model vail-lite
+  vail config model vail
+  vail config model vail-pro`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()

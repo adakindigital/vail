@@ -19,14 +19,14 @@ type Config struct {
 
 var defaults = Config{
 	Endpoint: "http://localhost:9090",
-	Model:    "aegis-lite",
+	Model:    "vail-lite",
 	Stream:   true,
 	Theme:    "dark",
 	Models: map[string]string{
-		"aegis-lite": "/Users/papa/models/friday/gemma-4-e2b-it-4bit",
-		"aegis":      "/Users/papa/models/friday/gemma-4-26b-a4b-it-4bit",
-		"aegis-pro":  "/Users/papa/models/friday/gemma-4-31b-it-4bit",
-		"aegis-max":  "/Users/papa/models/friday/gemma-4-31b-it-4bit",
+		"vail-lite": "/Users/papa/models/friday/gemma-4-e2b-it-4bit",
+		"vail":      "/Users/papa/models/friday/gemma-4-26b-a4b-it-4bit",
+		"vail-pro":  "/Users/papa/models/friday/gemma-4-31b-it-4bit",
+		"vail-max":  "/Users/papa/models/friday/gemma-4-31b-it-4bit",
 	},
 }
 
@@ -68,7 +68,7 @@ func Save(cfg *Config) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// ResolvedModel returns the underlying model ID for a given Aegis model name.
+// ResolvedModel returns the underlying model ID for a given Vail model name.
 // If the name isn't in the models map it's passed through as-is (supports raw model IDs).
 func (c *Config) ResolvedModel() string {
 	if id, ok := c.Models[c.Model]; ok {
