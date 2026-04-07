@@ -1,0 +1,61 @@
+# LiteLLM Proxy Configuration
+#
+# Sits between the Aegis FastAPI gateway and model backends.
+# Dev: routes to local mlx_lm server.
+# Prod: swap mlx_lm entries for vLLM endpoint or OpenRouter.
+#
+# Start in dev:
+#   cd harness
+#   source ../.venv/bin/activate
+#   litellm --config litellm_config.yaml --port 4000
+#
+# Or via the convenience script:
+#   make litellm
+
+model_list:
+  # aegis-lite — fast, daily use (E2B 4-bit)
+  - model_name: aegis-lite
+    litellm_params:
+      model: hosted_vllm/aegis-lite     # hosted_vllm = local OpenAI-compatible server, no external validation
+      api_base: http://localhost:8080/v1
+      api_key: "none"                   # mlx_lm doesn't require a key
+
+  # aegis — production workhorse (26B MoE 4-bit)
+  - model_name: aegis
+    litellm_params:
+      model: hosted_vllm/aegis
+      api_base: http://localhost:8080/v1
+      api_key: "none"
+
+  # aegis-pro — complex reasoning (31B dense 4-bit)
+  - model_name: aegis-pro
+    litellm_params:
+      model: hosted_vllm/aegis-pro
+      api_base: http://localhost:8080/v1
+      api_key: "none"
+
+  # aegis-max — alias for aegis-pro
+  - model_name: aegis-max
+    litellm_params:
+      model: hosted_vllm/aegis-max
+      api_base: http://localhost:8080/v1
+      api_key: "none"
+
+  # openrouter-fallback — premium / overflow (OpenRouter, requires OPENROUTER_API_KEY env var)
+  # Uncomment when ready for prod routing.
+  # - model_name: aegis-premium
+  #   litellm_params:
+  #     model: openrouter/deepseek/deepseek-r1
+  #     api_key: os.environ/OPENROUTER_API_KEY
+
+litellm_settings:
+  # Drop requests to a backend that fails 3 times in a row
+  num_retries: 2
+  # Log every request — matches what the gateway already captures
+  set_verbose: false
+
+general_settings:
+  # LiteLLM master key — set LITELLM_MASTER_KEY env var in prod.
+  # In dev, leave unset (open access, local only).
+  master_key: os.environ/LITELLM_MASTER_KEY
+  disable_master_key_auth: true          # disable key enforcement in dev

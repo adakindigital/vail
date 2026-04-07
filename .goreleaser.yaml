@@ -1,0 +1,65 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vail
+    main: ./main.go
+    binary: vail
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: vail
+    name_template: "vail_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-dev"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# Homebrew tap — enables: brew install adakindigital/tap/vail
+# Requires HOMEBREW_TAP_TOKEN env var in CI (GitHub PAT with repo write access to homebrew-tap)
+brews:
+  - name: vail
+    repository:
+      owner: adakindigital
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://adakin.co.za"
+    description: "Aegis — local-first AI assistant by Adakin Digital"
+    license: "Proprietary"
+    install: |
+      bin.install "vail"
+    test: |
+      system "#{bin}/vail", "--version"
