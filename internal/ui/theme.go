@@ -4,9 +4,11 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 // Theme holds a named colour palette.
@@ -126,22 +128,39 @@ func (t Theme) Banner(model, themeName, memoryNote string) string {
 		`  ╚═══╝  ╚═╝  ╚═╝╚═╝╚══════╝`,
 	}
 
+	termWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || termWidth < 40 {
+		termWidth = 80
+	}
+
+	center := func(s string) string {
+		visibleLen := lipgloss.Width(s)
+		pad := (termWidth - visibleLen) / 2
+		if pad < 0 {
+			pad = 0
+		}
+		return strings.Repeat(" ", pad) + s
+	}
+
 	logoStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	tagline := t.muted("Versatile Artificial Intelligence Layer  ·  Adakin Digital")
+	info := fmt.Sprintf("%s  %-14s    %s  %s", t.muted("model"), model, t.muted("theme"), themeName)
+	keys := t.muted("/help · /clear · /theme · /exit")
 
 	b := strings.Builder{}
 	b.WriteString("\n")
 	for _, line := range logo {
-		b.WriteString(fmt.Sprintf("  %s\n", logoStyle.Render(line)))
+		b.WriteString(center(logoStyle.Render(line)) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %s\n", tagline))
+	b.WriteString(center(tagline) + "\n")
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %s  %-14s  %s  %s\n", t.muted("model"), model, t.muted("theme"), themeName))
+	b.WriteString(center(info) + "\n")
 	if memoryNote != "" {
-		b.WriteString(fmt.Sprintf("  %s  %s\n", t.muted("memory"), t.okColor(memoryNote)))
+		memLine := fmt.Sprintf("%s  %s", t.muted("memory"), t.okColor(memoryNote))
+		b.WriteString(center(memLine) + "\n")
 	}
-	b.WriteString(fmt.Sprintf("  %s  %s\n", t.muted("keys"), t.muted("/help · /clear · /theme · /exit")))
+	b.WriteString(center(keys) + "\n")
 	b.WriteString("\n")
 	return b.String()
 }
