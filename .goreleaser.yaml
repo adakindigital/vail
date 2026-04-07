@@ -57,7 +57,7 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://adakin.co.za"
-    description: "Aegis — local-first AI assistant by Adakin Digital"
+    description: "Vail — Versatile AI Layer by Adakin Digital"
     license: "Proprietary"
     install: |
       bin.install "vail"
