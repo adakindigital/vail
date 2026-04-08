@@ -57,10 +57,11 @@ type StreamResult struct {
 }
 
 type Client struct {
-	endpoint string
-	apiKey   string
-	model    string
-	http     *http.Client
+	endpoint  string
+	apiKey    string
+	model     string
+	sessionID string
+	http      *http.Client
 }
 
 func New(endpoint, apiKey, model string) *Client {
@@ -76,6 +77,12 @@ func New(endpoint, apiKey, model string) *Client {
 			},
 		},
 	}
+}
+
+// SetSessionID attaches a session ID to all future requests as X-Session-Id.
+// The gateway uses this to persist conversation history across restarts.
+func (c *Client) SetSessionID(id string) {
+	c.sessionID = id
 }
 
 // Stream sends messages and calls onToken for each streamed token.
@@ -121,6 +128,9 @@ func (c *Client) post(body map[string]any) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.sessionID != "" {
+		req.Header.Set("X-Session-Id", c.sessionID)
 	}
 
 	resp, err := c.http.Do(req)

@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +74,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	th := ui.Get(cfg.Theme)
 	c := client.New(cfg.Endpoint, cfg.APIKey, cfg.Model)
+	c.SetSessionID(newSessionID())
 
 	cwd, _ := os.Getwd()
 	memory, memoryPath := loadProjectMemory()
@@ -478,4 +481,13 @@ func isValidModel(name string) bool {
 		}
 	}
 	return false
+}
+
+// newSessionID generates a random 16-byte hex session identifier.
+func newSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
