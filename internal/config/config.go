@@ -15,6 +15,7 @@ type Config struct {
 	Stream    bool              `yaml:"stream"`
 	Theme     string            `yaml:"theme"`
 	Models    map[string]string `yaml:"models"`
+	TavilyKey string            `yaml:"tavily_key"`
 }
 
 var defaults = Config{

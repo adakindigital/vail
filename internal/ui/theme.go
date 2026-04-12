@@ -215,17 +215,19 @@ func (t Theme) ToolDone(detail string) string {
 
 // ShellApproval renders the approval prompt for a shell command.
 // Caller must then read the user's y/N response.
-func (t Theme) ShellApproval(command string) string {
-	b := strings.Builder{}
-	b.WriteString(fmt.Sprintf("\n  %s\n", t.warnColor("◆ shell command")))
-	b.WriteString(fmt.Sprintf("\n    %s\n\n", t.toolColor(command)))
-	b.WriteString(fmt.Sprintf("  %s y/N  › ", t.muted("run this?")))
-	return b.String()
+// The command is already shown by ToolCall — this is just the yes/no line.
+func (t Theme) ShellApproval() string {
+	return fmt.Sprintf("  %s y/N  › ", t.muted("run this?"))
 }
 
 // Spinner renders a single spinner frame (use with \r to overwrite).
 func (t Theme) Spinner(frame string) string {
 	return fmt.Sprintf("\r  %s  %s", t.warnColor(frame), t.muted("thinking..."))
+}
+
+// ToolSpinner renders a spinner frame during tool execution (uses tool colour).
+func (t Theme) ToolSpinner(frame, label string) string {
+	return fmt.Sprintf("\r  %s  %s", t.toolColor(frame), t.muted(label))
 }
 
 // Error renders an error message.
@@ -269,13 +271,21 @@ func (t Theme) HelpText() string {
 }
 
 // SettingsText returns the formatted /settings output.
-func (t Theme) SettingsText(model, themeName, endpoint, apiKey string) string {
+func (t Theme) SettingsText(model, themeName, endpoint, apiKey, tavilyKey string) string {
 	keyDisplay := "(not set — local mode)"
 	if apiKey != "" {
 		keyDisplay = "set"
 	}
+	tavilyDisplay := "(not set — web search disabled)"
+	if tavilyKey != "" {
+		tavilyDisplay = "set  (web_search + fetch_url enabled)"
+	}
+	toolList := "read_file, shell"
+	if tavilyKey != "" {
+		toolList = "read_file, shell, web_search, fetch_url"
+	}
 	row := func(k, v string) string {
-		return fmt.Sprintf("  %s  %s\n", t.muted(fmt.Sprintf("%-12s", k)), v)
+		return fmt.Sprintf("  %s  %s\n", t.muted(fmt.Sprintf("%-14s", k)), v)
 	}
 	b := strings.Builder{}
 	b.WriteString("\n")
@@ -283,7 +293,8 @@ func (t Theme) SettingsText(model, themeName, endpoint, apiKey string) string {
 	b.WriteString(row("theme", themeName))
 	b.WriteString(row("endpoint", endpoint))
 	b.WriteString(row("api key", keyDisplay))
-	b.WriteString(row("tools", "read_file, shell"))
+	b.WriteString(row("tavily key", tavilyDisplay))
+	b.WriteString(row("tools", toolList))
 	b.WriteString("\n")
 	return b.String()
 }

@@ -25,8 +25,17 @@ var chatCmd = &cobra.Command{
 }
 
 // buildSystemPrompt constructs the full system prompt for a session.
-// It injects the current working directory and any loaded project memory.
-func buildSystemPrompt(cwd, memory string) string {
+// It injects the current working directory, any loaded project memory, and available tools.
+func buildSystemPrompt(cwd, memory, tavilyKey string) string {
+	toolList := `- read_file: Read any file by path. Use this constantly. When asked about code or a project, read the relevant files first rather than guessing.
+- shell: Run shell commands. Read-only commands (ls, find, cat, grep, git status, git log, etc.) run automatically without prompting. Commands that modify files or system state require explicit user approval.`
+
+	if tavilyKey != "" {
+		toolList += `
+- web_search: Search the web for current information. Use for recent events, documentation, anything requiring up-to-date knowledge.
+- fetch_url: Fetch and read a full web page by URL. Use after web_search to read the complete content of a result.`
+	}
+
 	prompt := fmt.Sprintf(`You are Vail (V.A.I.L.) — Versatile Artificial Intelligence Layer, built by Adakin Digital. You are knowledgeable, direct, and helpful. Strong knowledge of South African context — law, business, culture, and language.
 
 ## Environment
@@ -34,16 +43,13 @@ func buildSystemPrompt(cwd, memory string) string {
 - OS: macOS (Apple Silicon)
 
 ## Tools
-You have two tools. Use them freely and proactively — do not ask permission before using them.
-
-- read_file: Read any file by path. Use this constantly. When asked about code or a project, read the relevant files first rather than guessing.
-- shell: Run shell commands. Read-only commands (ls, find, cat, grep, git status, git log, etc.) run automatically without prompting. Commands that modify files or system state require explicit user approval.
+%s
 
 ## How to work
 - When asked about a project or codebase, EXPLORE it. Use ls to discover structure, read key files (go.mod, package.json, README, main entry points, config files).
 - Chain your tools: explore → read → answer. Don't answer from memory when you can verify.
-- When a user says "scan this project", "what is this", or "understand this codebase" — use your tools to actually do it.
-- Be direct. Don't over-explain. Don't ask clarifying questions when you can just look.`, cwd)
+- When asked about current events or anything time-sensitive, use web_search first rather than relying on training data.
+- Be direct. Don't over-explain. Don't ask clarifying questions when you can just look.`, cwd, toolList)
 
 	if memory != "" {
 		prompt += "\n\n## Project Memory\n\n" + memory
@@ -78,7 +84,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	cwd, _ := os.Getwd()
 	memory, memoryPath := loadProjectMemory()
-	systemPrompt := buildSystemPrompt(cwd, memory)
+	systemPrompt := buildSystemPrompt(cwd, memory, cfg.TavilyKey)
 
 	messages := []client.Message{
 		{Role: "system", Content: systemPrompt},
@@ -167,9 +173,15 @@ func handleSlashCommand(
 	case "/tools":
 		fmt.Print(th.Info("read_file  ·  read any file by path"))
 		fmt.Print(th.Info("shell      ·  run shell commands (requires your approval)"))
+		if cfg.TavilyKey != "" {
+			fmt.Print(th.Info("web_search ·  search the web (Tavily)"))
+			fmt.Print(th.Info("fetch_url  ·  fetch and read a web page"))
+		} else {
+			fmt.Print(th.Info("web_search ·  (not enabled — run: vail config tavily-key <key>)"))
+		}
 
 	case "/settings":
-		fmt.Print(th.SettingsText(cfg.Model, cfg.Theme, cfg.Endpoint, cfg.APIKey))
+		fmt.Print(th.SettingsText(cfg.Model, cfg.Theme, cfg.Endpoint, cfg.APIKey, cfg.TavilyKey))
 
 	case "/theme":
 		if len(cmd) == 1 {
@@ -222,7 +234,7 @@ func handleSlashCommand(
 
 // agenticTurn runs one full model turn, executing tool calls until the model stops.
 func agenticTurn(c *client.Client, th ui.Theme, cfg config.Config, messages *[]client.Message) error {
-	toolDefs := tools.Definitions()
+	toolDefs := tools.Definitions(cfg.TavilyKey)
 
 	for {
 		done := make(chan struct{})
@@ -274,19 +286,32 @@ func agenticTurn(c *client.Client, th ui.Theme, cfg config.Config, messages *[]c
 		// Execute each tool and feed results back
 		for _, tc := range result.ToolCalls {
 			detail := toolDetail(tc)
+			var output string
 
-			output := tools.Execute(tc, func(command string) bool {
-				if tools.IsSafeCommand(command) {
-					// Auto-approve read-only commands — show it's running but don't prompt
-					fmt.Print(th.ToolCall("shell", command))
-					return true
+			// Always show what's about to run before executing
+			fmt.Print(th.ToolCall(tc.Name, detail))
+
+			switch tc.Name {
+			case "shell":
+				if tools.IsSafeCommand(detail) {
+					output = runWithSpinner(th, "running...", func() string {
+						return tools.Execute(tc, cfg.TavilyKey, func(string) bool { return true })
+					})
+				} else {
+					if !shellApproval(th) {
+						output = "user declined to run this command"
+					} else {
+						output = runWithSpinner(th, "running...", func() string {
+							return tools.Execute(tc, cfg.TavilyKey, func(string) bool { return true })
+						})
+					}
 				}
-				return shellApproval(th, command)
-			})
-
-			if tc.Name != "shell" || !tools.IsSafeCommand(detail) {
-				fmt.Print(th.ToolCall(tc.Name, detail))
+			default:
+				output = runWithSpinner(th, toolRunLabel(tc.Name), func() string {
+					return tools.Execute(tc, cfg.TavilyKey, func(string) bool { return true })
+				})
 			}
+
 			fmt.Print(th.ToolDone(truncate(output, 80)))
 
 			*messages = append(*messages, client.Message{
@@ -299,9 +324,9 @@ func agenticTurn(c *client.Client, th ui.Theme, cfg config.Config, messages *[]c
 	}
 }
 
-// shellApproval shows the proposed command and waits for explicit approval.
-func shellApproval(th ui.Theme, command string) bool {
-	fmt.Print(th.ShellApproval(command))
+// shellApproval waits for explicit y/N approval. ToolCall already showed the command.
+func shellApproval(th ui.Theme) bool {
+	fmt.Print(th.ShellApproval())
 	var input string
 	fmt.Scanln(&input)
 	approved := strings.ToLower(strings.TrimSpace(input)) == "y"
@@ -309,6 +334,39 @@ func shellApproval(th ui.Theme, command string) bool {
 		fmt.Print(th.Info("skipped"))
 	}
 	return approved
+}
+
+// runWithSpinner runs fn in a goroutine and shows a spinner until it completes.
+func runWithSpinner(th ui.Theme, label string, fn func() string) string {
+	resultCh := make(chan string, 1)
+	go func() { resultCh <- fn() }()
+
+	i := 0
+	for {
+		select {
+		case out := <-resultCh:
+			fmt.Print("\r\033[K") // clear spinner line
+			return out
+		default:
+			fmt.Print(th.ToolSpinner(spinnerFrames[i%len(spinnerFrames)], label))
+			time.Sleep(80 * time.Millisecond)
+			i++
+		}
+	}
+}
+
+// toolRunLabel returns the in-progress status label for a given tool name.
+func toolRunLabel(name string) string {
+	switch name {
+	case "read_file":
+		return "reading..."
+	case "web_search":
+		return "searching..."
+	case "fetch_url":
+		return "fetching..."
+	default:
+		return name + "..."
+	}
 }
 
 // spin runs the thinking animation until done is closed.

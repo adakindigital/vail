@@ -41,6 +41,9 @@ BACKEND_URL = os.getenv("VAIL_BACKEND_URL", "http://localhost:8080").rstrip("/")
 VAIL_API_KEY = os.getenv("VAIL_API_KEY", "")
 DB_URL = os.getenv("VAIL_DB_URL", "./vail_dev.db")
 BACKEND_MODEL = os.getenv("VAIL_BACKEND_MODEL", "")
+# Max turns of history to inject per request. Each turn = 2 messages (user + assistant).
+# Prevents long sessions from overflowing the model's context window.
+MAX_HISTORY_TURNS = int(os.getenv("VAIL_MAX_HISTORY_TURNS", "20"))
 
 _backend_model_id: str | None = None
 
@@ -131,6 +134,10 @@ async def chat_completions(
         await database.get_or_create_session(session_id)
         history = await database.get_session_messages(session_id)
         if history:
+            # Cap to last N turns so long sessions don't overflow the context window
+            max_msgs = MAX_HISTORY_TURNS * 2
+            if len(history) > max_msgs:
+                history = history[-max_msgs:]
             # Merge: system messages stay at front, history behind them, new messages last
             system_msgs = [m for m in messages if m.get("role") == "system"]
             non_system = [m for m in messages if m.get("role") != "system"]

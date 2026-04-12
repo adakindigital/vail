@@ -21,12 +21,17 @@ var configShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("endpoint:  %s\n", cfg.Endpoint)
-		fmt.Printf("model:     %s  (%s)\n", cfg.Model, cfg.ResolvedModel())
+		fmt.Printf("endpoint:    %s\n", cfg.Endpoint)
+		fmt.Printf("model:       %s  (%s)\n", cfg.Model, cfg.ResolvedModel())
 		if cfg.APIKey != "" {
-			fmt.Printf("api_key:   %s...\n", cfg.APIKey[:8])
+			fmt.Printf("api_key:     %s...\n", cfg.APIKey[:8])
 		} else {
-			fmt.Printf("api_key:   (not set — local mode)\n")
+			fmt.Printf("api_key:     (not set — local mode)\n")
+		}
+		if cfg.TavilyKey != "" {
+			fmt.Printf("tavily_key:  set (web search enabled)\n")
+		} else {
+			fmt.Printf("tavily_key:  (not set — run: vail config tavily-key <key>)\n")
 		}
 		return nil
 	},
@@ -101,9 +106,28 @@ var configSetKeyCmd = &cobra.Command{
 	},
 }
 
+var configSetTavilyKeyCmd = &cobra.Command{
+	Use:   "tavily-key [api-key]",
+	Short: "Set the Tavily API key (enables web_search and fetch_url tools)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		cfg.TavilyKey = args[0]
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("Tavily key saved — web_search and fetch_url tools are now active\n")
+		return nil
+	},
+}
+
 func init() {
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configSetEndpointCmd)
 	configCmd.AddCommand(configSetModelCmd)
 	configCmd.AddCommand(configSetKeyCmd)
+	configCmd.AddCommand(configSetTavilyKeyCmd)
 }
