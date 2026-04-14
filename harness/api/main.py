@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from api import db as database
 from api import ratelimit
@@ -90,6 +91,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Vail API Gateway", version="0.2.0", lifespan=lifespan)
+
+# Allow Flutter web (and any local dev origin) to reach the gateway.
+# In production, tighten origins to the actual deployed domain.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(build_router(VAIL_API_KEY))
 
 
@@ -198,7 +209,7 @@ async def chat_completions(
         if session_id and response_text:
             user_content = _last_user_content(messages)
             if user_content:
-                asyncio.create_task(database.append_session_turn(session_id, user_content, response_text))
+                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text))
 
     asyncio.create_task(database.log_interaction(
         session_id=session_id, model=model, messages=messages,
@@ -233,7 +244,15 @@ async def _stream_from_backend(
                     error_body = await resp.aread()
                     error = f"backend {resp.status_code}: {error_body[:200]}"
                     log.error("backend error  status=%d  body=%s", resp.status_code, error_body[:200])
-                    yield f"data: {json.dumps({'error': {'message': f'backend error {resp.status_code}'}})}\n\n"
+                    # Try to extract a readable message from the backend error body
+                    try:
+                        err_data = json.loads(error_body)
+                        err_msg = err_data.get("error") or err_data.get("message") or f"Backend error ({resp.status_code})"
+                        if isinstance(err_msg, dict):
+                            err_msg = err_msg.get("message", f"Backend error ({resp.status_code})")
+                    except Exception:
+                        err_msg = f"Backend error ({resp.status_code})"
+                    yield f"data: {json.dumps({'error': {'message': err_msg}})}\n\n"
                     return
 
                 async for chunk in resp.aiter_bytes():
@@ -266,13 +285,61 @@ async def _stream_from_backend(
         if session_id and response_text and not error:
             user_content = _last_user_content(messages)
             if user_content:
-                asyncio.create_task(database.append_session_turn(session_id, user_content, response_text))
+                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text))
 
         asyncio.create_task(database.log_interaction(
             session_id=session_id, model=model, messages=messages,
             response_text=response_text, tokens_in=tokens_in, tokens_out=tokens_out,
             latency_ms=elapsed_ms, stream=True, error=error,
         ))
+
+
+async def _generate_session_title(session_id: str, user_content: str) -> None:
+    """Generate a short session title from the first user message and persist it.
+
+    Uses a direct backend call — not routed through the gateway — to avoid
+    polluting session history with the title prompt. Fire-and-forget: any
+    failure is logged and silently swallowed.
+    """
+    if not _backend_model_id:
+        return
+    prompt = (
+        "Generate a concise 4-6 word title for a conversation that starts with "
+        "the following message. Reply with only the title — no punctuation at the "
+        f"end, no quotes:\n\n{user_content[:300]}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{BACKEND_URL}/v1/chat/completions",
+                json={
+                    "model": _backend_model_id,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "max_tokens": 20,
+                    "temperature": 0.3,
+                },
+                headers={"Content-Type": "application/json"},
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            title = data["choices"][0]["message"]["content"].strip().strip('"\'').strip()
+            if title:
+                await database.set_session_title(session_id, title)
+                log.info("title generated  session=%s  title=%r", session_id, title)
+    except Exception as exc:
+        log.warning("title generation failed  session=%s  error=%s", session_id, exc)
+
+
+async def _save_turn_and_title(
+    session_id: str,
+    user_content: str,
+    assistant_content: str,
+) -> None:
+    """Save the turn and, if it is the first one, generate a session title."""
+    is_first = await database.append_session_turn(session_id, user_content, assistant_content)
+    if is_first:
+        asyncio.create_task(_generate_session_title(session_id, user_content))
 
 
 def _extract_content_from_sse(raw: str) -> str:

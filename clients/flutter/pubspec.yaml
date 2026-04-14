@@ -1,0 +1,49 @@
+name: vail_app
+description: Vail — Versatile Artificial Intelligence Layer. Flutter client for web, mobile, and desktop.
+publish_to: none
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.2
+  get_it: ^8.0.2
+
+  # Networking — HTTP client for gateway API + SSE streaming
+  http: ^1.2.2
+
+  # Local settings persistence (endpoint URL, theme preference)
+  shared_preferences: ^2.3.3
+
+  # Markdown rendering for model responses
+  flutter_markdown: ^0.7.4
+  markdown: ^7.2.2
+
+  # Syntax highlighting inside code blocks
+  flutter_highlight: ^0.7.0
+
+  # Link handling from markdown responses
+  url_launcher: ^6.3.1
+
+  # Image attachment — pick from gallery or camera
+  image_picker: ^1.1.2
+
+  # Responsive layout — ScreenTypeLayout.builder for mobile/desktop view selection
+  responsive_builder: ^0.7.0
+
+  # Icons
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

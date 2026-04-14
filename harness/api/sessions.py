@@ -48,6 +48,19 @@ def build_router(vail_api_key: str) -> APIRouter:
             raise HTTPException(status_code=404, detail="Session not found")
         return JSONResponse(session)
 
+    @r.patch("/v1/sessions/{session_id}")
+    async def update_session(
+        session_id: str,
+        body: dict,
+        authorization: str = Header(default=""),
+    ):
+        _check_auth(authorization, vail_api_key)
+        title = body.get("title")
+        if not title or not isinstance(title, str):
+            raise HTTPException(status_code=400, detail="body must include 'title' string")
+        await database.set_session_title(session_id, title.strip())
+        return JSONResponse({"updated": True, "session_id": session_id})
+
     @r.delete("/v1/sessions/{session_id}")
     async def delete_session(session_id: str, authorization: str = Header(default="")):
         _check_auth(authorization, vail_api_key)

@@ -179,19 +179,26 @@ async def append_session_turn(
     session_id: str,
     user_content: str,
     assistant_content: str,
-) -> None:
-    """Append a user+assistant turn and update session metadata."""
+) -> bool:
+    """Append a user+assistant turn and update session metadata.
+
+    Returns True if this was the first turn in the session (message_count was 0),
+    so callers can trigger title generation only once.
+    """
     db = _db
     if db is None:
-        return
+        return False
 
-    # Get current max sequence
+    # Snapshot message_count before we increment — tells callers if this is turn 1
     async with db.execute(
-        "SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM session_messages WHERE session_id = ?",
+        "SELECT message_count, COALESCE(MAX(sm.sequence), 0) AS max_seq "
+        "FROM sessions LEFT JOIN session_messages sm ON sm.session_id = sessions.id "
+        "WHERE sessions.id = ?",
         (session_id,),
     ) as cursor:
         row = await cursor.fetchone()
-        next_seq = (row["max_seq"] if row else 0) + 1
+    is_first_turn = (row["message_count"] == 0) if row else False
+    next_seq = (row["max_seq"] if row else 0) + 1
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -204,7 +211,7 @@ async def append_session_turn(
         (session_id, next_seq + 1, "assistant", assistant_content, now),
     )
 
-    # Set title from first user message, update count and timestamp
+    # Keep the raw first-message fallback title until the model generates a real one
     await db.execute(
         """
         UPDATE sessions SET
@@ -214,6 +221,19 @@ async def append_session_turn(
         WHERE id = ?
         """,
         (now, user_content[:80], session_id),
+    )
+    await db.commit()
+    return is_first_turn
+
+
+async def set_session_title(session_id: str, title: str) -> None:
+    """Overwrite the session title — called after model-generated title arrives."""
+    db = _db
+    if db is None:
+        return
+    await db.execute(
+        "UPDATE sessions SET title = ? WHERE id = ?",
+        (title, session_id),
     )
     await db.commit()
 
