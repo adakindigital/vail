@@ -63,12 +63,12 @@ class _DocumentsHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Documents', style: VailTheme.heading),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'AI-produced documents, ready to copy or share.',
                   style: VailTheme.bodySmall,
@@ -286,7 +286,7 @@ class _EmptyState extends StatelessWidget {
               style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
             ),
             const SizedBox(height: VailTheme.sm),
-            const Text(
+            Text(
               'Ask Vail to write a report, proposal, email,\nor any other document — it appears here.',
               style: VailTheme.bodySmall,
               textAlign: TextAlign.center,

@@ -49,7 +49,7 @@ class _SettingsHeader extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const Expanded(child: Text('Settings', style: VailTheme.heading)),
+          Expanded(child: Text('Settings', style: VailTheme.heading)),
           Text(
             'v${AppConstants.appVersion}',
             style: VailTheme.mono.copyWith(color: VailTheme.textMuted),
@@ -545,14 +545,14 @@ class _VisualModeRow extends StatelessWidget {
           border: Border.all(color: VailTheme.border),
           borderRadius: BorderRadius.circular(VailTheme.radiusMd),
         ),
-        child: const Row(
+        child: Row(
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Visual Mode', style: VailTheme.body),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'Toggle between dark and light interface.',
                     style: VailTheme.bodySmall,

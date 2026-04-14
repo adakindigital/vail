@@ -4,12 +4,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:vail_app/core/keys/chat_keys.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 
+/// Forest Sanctuary chat input bar.
+///
+/// Pill-shaped container with a glowing emerald send button.
+/// Sits above the bottom nav, separated by a gradient fade.
 class ChatInput extends StatefulWidget {
   final bool enabled;
-
-  /// Called with the trimmed message text and an optional attached image.
   final void Function(String input, {Uint8List? imageBytes}) onSend;
-
   final VoidCallback? onNewDocument;
 
   const ChatInput({
@@ -78,94 +79,110 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.md,
-        vertical: VailTheme.sm,
+      // Gradient fade from background — matches Forest Sanctuary input area
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            VailTheme.background.withValues(alpha: 0),
+            VailTheme.background,
+          ],
+          stops: const [0.0, 0.35],
+        ),
       ),
-      decoration: const BoxDecoration(
-        color: VailTheme.background,
-        border: Border(top: BorderSide(color: VailTheme.border)),
+      padding: EdgeInsets.fromLTRB(
+        VailTheme.lg,
+        VailTheme.md,
+        VailTheme.lg,
+        bottomInset > 0
+            ? VailTheme.md
+            : bottomPad + VailTheme.md,
       ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Image preview strip
-            if (_pendingImage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: VailTheme.sm),
-                child: _ImagePreview(
-                  bytes: _pendingImage!,
-                  onRemove: _clearImage,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_pendingImage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: VailTheme.sm),
+              child: _ImagePreview(bytes: _pendingImage!, onRemove: _clearImage),
+            ),
+          // Pill input container
+          Container(
+            decoration: BoxDecoration(
+              color: VailTheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+              border: Border.all(color: VailTheme.ghostBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 30,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Image picker button
-                _IconButton(
-                  icon: Icons.image_outlined,
+                // Attachment button
+                _PillIconButton(
+                  icon: Icons.add_circle_outline_rounded,
                   active: _pendingImage != null,
                   onTap: _pickImage,
                 ),
-                const SizedBox(width: VailTheme.sm),
-                // Doc button
-                if (widget.onNewDocument != null) ...[
-                  _IconButton(
-                    icon: Icons.article_outlined,
+                if (widget.onNewDocument != null)
+                  _PillIconButton(
+                    icon: Icons.description_outlined,
                     onTap: widget.onNewDocument!,
                   ),
-                  const SizedBox(width: VailTheme.sm),
-                ],
                 // Text field
                 Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: VailTheme.surfaceInput,
-                      border: Border.all(color: VailTheme.border),
-                      borderRadius: BorderRadius.circular(VailTheme.radiusMd),
-                    ),
-                    child: TextField(
-                      key: ChatKeys.messageInput,
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      enabled: widget.enabled,
-                      maxLines: 6,
-                      minLines: 1,
-                      textInputAction: TextInputAction.newline,
-                      style: VailTheme.body,
-                      decoration: InputDecoration(
-                        hintText: 'Message Vail...',
-                        hintStyle: VailTheme.body
-                            .copyWith(color: VailTheme.textMuted),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: VailTheme.md,
-                          vertical: VailTheme.sm + 2,
-                        ),
+                  child: TextField(
+                    key: ChatKeys.messageInput,
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    enabled: widget.enabled,
+                    maxLines: 5,
+                    minLines: 1,
+                    textInputAction: TextInputAction.newline,
+                    style: VailTheme.body.copyWith(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Message Vail...',
+                      hintStyle: VailTheme.body.copyWith(
+                        fontSize: 14,
+                        color: VailTheme.textMuted,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: VailTheme.sm,
+                        vertical: VailTheme.md,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: VailTheme.sm),
-                // Send button
-                _SendButton(
-                  key: ChatKeys.sendButton,
-                  enabled: widget.enabled,
-                  onTap: _handleSend,
+                // Send button — glowing pill
+                Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: _SendButton(
+                    key: ChatKeys.sendButton,
+                    enabled: widget.enabled,
+                    onTap: _handleSend,
+                  ),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── Image preview ─────────────────────────────────────────────────────────────
+// ── Image preview strip ───────────────────────────────────────────────────────
 
 class _ImagePreview extends StatelessWidget {
   final Uint8List bytes;
@@ -182,30 +199,25 @@ class _ImagePreview extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-            child: Image.memory(
-              bytes,
-              width: 72,
-              height: 72,
-              fit: BoxFit.cover,
-            ),
+            child: Image.memory(bytes, width: 72, height: 72, fit: BoxFit.cover),
           ),
-          // Remove badge
           Positioned(
             top: -6,
             right: -6,
             child: GestureDetector(
               onTap: onRemove,
               child: Container(
-                width: 18,
-                height: 18,
-                decoration: const BoxDecoration(
-                  color: VailTheme.background,
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: VailTheme.surfaceContainer,
                   shape: BoxShape.circle,
+                  border: Border.all(color: VailTheme.ghostBorder),
                 ),
                 child: const Icon(
                   Icons.close_rounded,
                   size: 12,
-                  color: VailTheme.textSecondary,
+                  color: VailTheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -216,14 +228,14 @@ class _ImagePreview extends StatelessWidget {
   }
 }
 
-// ── Buttons ───────────────────────────────────────────────────────────────────
+// ── Icon button inside pill ───────────────────────────────────────────────────
 
-class _IconButton extends StatelessWidget {
+class _PillIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool active;
 
-  const _IconButton({
+  const _PillIconButton({
     required this.icon,
     required this.onTap,
     this.active = false,
@@ -234,29 +246,24 @@ class _IconButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: active ? VailTheme.accentSubtle : VailTheme.surfaceInput,
-          border: Border.all(
-            color: active
-                ? VailTheme.accent.withValues(alpha: 0.5)
-                : VailTheme.border,
-          ),
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: VailTheme.sm + 2,
+          vertical: VailTheme.md,
         ),
-        alignment: Alignment.center,
         child: Icon(
           icon,
-          size: 18,
-          color: active ? VailTheme.accent : VailTheme.textSecondary,
+          size: 22,
+          color: active
+              ? VailTheme.primary
+              : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
         ),
       ),
     );
   }
 }
+
+// ── Send button ───────────────────────────────────────────────────────────────
 
 class _SendButton extends StatelessWidget {
   final bool enabled;
@@ -274,15 +281,18 @@ class _SendButton extends StatelessWidget {
       onTap: enabled ? onTap : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        width: 36,
-        height: 36,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-          color: enabled ? VailTheme.accent : VailTheme.textMuted,
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+          color: enabled ? VailTheme.primary : VailTheme.surfaceContainerLow,
+          shape: BoxShape.circle,
+          boxShadow: enabled ? VailTheme.primaryGlow : null,
         ),
         child: Icon(
-          Icons.arrow_upward_rounded,
-          color: enabled ? VailTheme.onAccent : VailTheme.background,
+          Icons.send_rounded,
+          color: enabled
+              ? VailTheme.onPrimary
+              : VailTheme.onSurfaceVariant.withValues(alpha: 0.3),
           size: 18,
         ),
       ),

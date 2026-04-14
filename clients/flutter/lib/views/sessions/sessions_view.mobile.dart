@@ -73,21 +73,28 @@ class _SessionsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
-        top: statusTop + VailTheme.lg,
+        top: statusTop + VailTheme.sm,
         left: VailTheme.lg,
         right: VailTheme.lg,
-        bottom: VailTheme.lg,
+        bottom: VailTheme.sm,
       ),
-      decoration: const BoxDecoration(
-        color: VailTheme.background,
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
+      decoration: BoxDecoration(
+        color: VailTheme.background.withValues(alpha: 0.95),
+        border: const Border(bottom: BorderSide(color: VailTheme.ghostBorder)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Expanded(child: Text('Sessions', style: VailTheme.heading)),
-          Icon(Icons.search_rounded, color: VailTheme.textSecondary, size: 20),
-          SizedBox(width: VailTheme.md),
-          Icon(Icons.tune_rounded, color: VailTheme.textSecondary, size: 20),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.history_rounded, color: VailTheme.primary, size: 18),
+              const SizedBox(width: VailTheme.xs + 2),
+              Text('History', style: VailTheme.heading.copyWith(fontSize: 18)),
+            ],
+          ),
+          const Spacer(),
+          Icon(Icons.search_rounded,
+              color: VailTheme.onSurfaceVariant.withValues(alpha: 0.5), size: 20),
         ],
       ),
     );
@@ -122,17 +129,15 @@ class _SessionsList extends StatelessWidget {
     if (sessions.isEmpty) return const _EmptyState();
 
     return RefreshIndicator(
-      color: VailTheme.accent,
-      backgroundColor: VailTheme.surface,
+      color: VailTheme.primary,
+      backgroundColor: VailTheme.surfaceContainer,
       onRefresh: () => context.read<SessionsViewModel>().load(),
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
-        itemCount: sessions.length,
-        separatorBuilder: (context, index) => const Divider(
-          height: 1,
-          indent: VailTheme.lg,
-          endIndent: VailTheme.lg,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(
+          vertical: VailTheme.md,
+          horizontal: VailTheme.sm,
         ),
+        itemCount: sessions.length,
         itemBuilder: (context, index) => _SessionTile(
           session: sessions[index],
           onTap: () => _openSession(context, sessions[index].id),
@@ -164,16 +169,22 @@ class _SessionTile extends StatelessWidget {
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: VailTheme.xl),
-        color: VailTheme.error.withValues(alpha: 0.15),
+        decoration: BoxDecoration(
+          color: VailTheme.error.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+        ),
         child: const Icon(Icons.delete_outline_rounded,
             color: VailTheme.error, size: 20),
       ),
-      child: InkWell(
+      child: GestureDetector(
         onTap: onTap,
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.symmetric(
-            horizontal: VailTheme.lg,
-            vertical: VailTheme.md,
+            horizontal: VailTheme.md,
+            vertical: VailTheme.sm + 2,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(VailTheme.radiusSm),
           ),
           child: Row(
             children: [
@@ -183,31 +194,41 @@ class _SessionTile extends StatelessWidget {
                   children: [
                     Text(
                       session.displayTitle,
-                      style: VailTheme.sessionTitle,
+                      style: VailTheme.label.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: VailTheme.onSurface,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: VailTheme.xs),
                     Row(
                       children: [
-                        Text(_relativeTime(session.updatedAt),
-                            style: VailTheme.bodySmall),
-                        const SizedBox(width: VailTheme.sm),
-                        Text('·',
-                            style: VailTheme.bodySmall
-                                .copyWith(color: VailTheme.textMuted)),
-                        const SizedBox(width: VailTheme.sm),
+                        Text(
+                          _relativeTime(session.updatedAt),
+                          style: VailTheme.bodySmall.copyWith(fontSize: 11),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: VailTheme.xs + 2),
+                          child: Text('·',
+                              style: VailTheme.bodySmall.copyWith(
+                                color: VailTheme.textMuted,
+                              )),
+                        ),
                         Text(
                           '${session.messageCount} messages',
-                          style: VailTheme.bodySmall,
+                          style: VailTheme.bodySmall.copyWith(fontSize: 11),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded,
-                  color: VailTheme.textMuted, size: 18),
+              Icon(Icons.chevron_right_rounded,
+                  color: VailTheme.onSurfaceVariant.withValues(alpha: 0.3),
+                  size: 18),
             ],
           ),
         ),
@@ -232,9 +253,11 @@ class _LoadingBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: CircularProgressIndicator(
-          color: VailTheme.accent, strokeWidth: 1.5),
+        color: VailTheme.primary.withValues(alpha: 0.7),
+        strokeWidth: 1.5,
+      ),
     );
   }
 }
@@ -253,13 +276,31 @@ class _ErrorBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.wifi_off_rounded,
-                color: VailTheme.textMuted, size: 32),
-            const SizedBox(height: VailTheme.md),
-            Text(message,
-                style: VailTheme.bodySmall, textAlign: TextAlign.center),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: VailTheme.error.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.wifi_off_rounded,
+                  color: VailTheme.error, size: 24),
+            ),
+            const SizedBox(height: VailTheme.lg),
+            Text(
+              'Signal interrupted',
+              style: VailTheme.subheading,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: VailTheme.sm),
+            Text(
+              message,
+              style: VailTheme.bodySmall.copyWith(
+                  color: VailTheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: VailTheme.xl),
-            VailButton.primary(label: 'RETRY', onTap: onRetry),
+            VailButton.primary(label: 'Retry', onTap: onRetry),
           ],
         ),
       ),
@@ -273,19 +314,38 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.history_rounded,
-              color: VailTheme.textMuted, size: 40),
-          const SizedBox(height: VailTheme.md),
-          Text('No sessions yet',
-              style:
-                  VailTheme.body.copyWith(color: VailTheme.textSecondary)),
-          const SizedBox(height: VailTheme.sm),
-          const Text('Start a conversation to see it here.',
-              style: VailTheme.bodySmall),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(VailTheme.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: VailTheme.primaryContainer,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: VailTheme.primary.withValues(alpha: 0.2),
+                ),
+              ),
+              child: const Icon(
+                Icons.history_rounded,
+                color: VailTheme.primary,
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: VailTheme.lg),
+            Text('No conversations yet', style: VailTheme.subheading),
+            const SizedBox(height: VailTheme.sm),
+            Text(
+              'Start a chat to see it here.',
+              style: VailTheme.bodySmall.copyWith(
+                  color: VailTheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:vail_app/core/constants/app_constants.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 import 'package:vail_app/views/chat/chat_viewmodel.dart';
 import 'package:vail_app/views/chat/widgets/chat_input.dart';
@@ -9,14 +10,13 @@ import 'package:vail_app/views/chat/widgets/response_insight_card.dart';
 import 'package:vail_app/views/documents/new_document_sheet.dart';
 import 'package:vail_app/views/upgrade/upgrade_sheet.dart';
 
-/// Minimum assistant response length (characters) that triggers the insight card.
 const int _kDesktopInsightThreshold = 400;
 
-/// Desktop chat UI — no brand header (the desktop shell owns top-bar context),
-/// message list expands to fill the shell's content area.
+/// Desktop chat UI — Forest Sanctuary layout.
 ///
-/// Rendered by [ChatView] via [ScreenTypeLayout.builder].
-/// Do not use directly — always go through [ChatView].
+/// Top bar with Lite/Core/Pro segmented pill + Share action.
+/// Centred message feed with max-width constraint.
+/// Gradient-faded input area at bottom.
 class ChatViewDesktop extends StatelessWidget {
   final void Function(int) onSwitchTab;
   final void Function(String input, {Uint8List? imageBytes}) onSend;
@@ -31,7 +31,7 @@ class ChatViewDesktop extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // No header — desktop shell's top bar provides context.
+        _DesktopChatTopBar(),
         Selector<ChatViewModel, ChatState>(
           selector: (_, vm) => vm.state,
           builder: (context, state, child) {
@@ -50,7 +50,10 @@ class ChatViewDesktop extends StatelessWidget {
               final messages = vm.messages;
               if (messages.isEmpty) return const _EmptyState();
               return ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
+                padding: const EdgeInsets.only(
+                  top: VailTheme.xl,
+                  bottom: VailTheme.xxl + VailTheme.xl,
+                ),
                 reverse: true,
                 itemCount: messages.length,
                 itemBuilder: (context, index) {
@@ -62,18 +65,25 @@ class ChatViewDesktop extends StatelessWidget {
                       msg.content.length >= _kDesktopInsightThreshold &&
                       !vm.isInsightCardDismissed(msgIndex);
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      MessageBubble(message: msg, index: msgIndex),
-                      if (showInsight)
-                        ResponseInsightCard(
-                          mode: resolveInsightMode(msg.model ?? vm.activeModel, false),
-                          activeModel: msg.model ?? vm.activeModel,
-                          onDismiss: () => vm.dismissInsightCard(msgIndex),
-                          onUpgrade: () => showUpgradeSheet(context),
-                        ),
-                    ],
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          MessageBubble(message: msg, index: msgIndex),
+                          if (showInsight)
+                            ResponseInsightCard(
+                              mode: resolveInsightMode(
+                                  msg.model ?? vm.activeModel, false),
+                              activeModel: msg.model ?? vm.activeModel,
+                              onDismiss: () =>
+                                  vm.dismissInsightCard(msgIndex),
+                              onUpgrade: () => showUpgradeSheet(context),
+                            ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               );
@@ -82,13 +92,135 @@ class ChatViewDesktop extends StatelessWidget {
         ),
         Selector<ChatViewModel, bool>(
           selector: (_, vm) => vm.isSending,
-          builder: (context, isSending, child) => ChatInput(
-            enabled: !isSending,
-            onSend: onSend,
-            onNewDocument: () => showNewDocumentSheet(context),
+          builder: (context, isSending, child) => Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ChatInput(
+                enabled: !isSending,
+                onSend: onSend,
+                onNewDocument: () => showNewDocumentSheet(context),
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Desktop top bar ───────────────────────────────────────────────────────────
+
+class _DesktopChatTopBar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.xl),
+      decoration: BoxDecoration(
+        color: VailTheme.background.withValues(alpha: 0.95),
+        border: const Border(
+          bottom: BorderSide(color: VailTheme.ghostBorder),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Model tier segmented pill
+          Selector<ChatViewModel, String>(
+            selector: (_, vm) => vm.activeModel,
+            builder: (context, model, child) =>
+                _DesktopModelPill(activeModel: model),
+          ),
+          const Spacer(),
+          // Share chat button
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: VailTheme.md,
+              vertical: VailTheme.xs + 2,
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(color: VailTheme.ghostBorder),
+              borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.share_rounded,
+                    color: VailTheme.primary, size: 14),
+                const SizedBox(width: VailTheme.xs + 2),
+                Text(
+                  'Share chat',
+                  style: VailTheme.caption.copyWith(
+                    color: VailTheme.primary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopModelPill extends StatelessWidget {
+  final String activeModel;
+
+  const _DesktopModelPill({required this.activeModel});
+
+  static const _tiers = [
+    ('vail-lite', 'Lite'),
+    ('vail', 'Core'),
+    ('vail-pro', 'Pro'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: VailTheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+        border: Border.all(color: VailTheme.ghostBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: _tiers.map((t) {
+          final isActive = t.$1 == activeModel;
+          return GestureDetector(
+            onTap: () {
+              if (AppConstants.isPremiumTier(t.$1)) {
+                showUpgradeSheet(context);
+              } else {
+                context.read<ChatViewModel>().setModel(t.$1);
+              }
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(
+                horizontal: VailTheme.lg,
+                vertical: VailTheme.xs + 1,
+              ),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? VailTheme.primary.withValues(alpha: 0.12)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+              ),
+              child: Text(
+                t.$2,
+                style: VailTheme.caption.copyWith(
+                  color: isActive
+                      ? VailTheme.primary
+                      : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  fontSize: 10,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }
@@ -98,73 +230,99 @@ class ChatViewDesktop extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox(
-        width: 480,
-        child: Padding(
-          padding: const EdgeInsets.all(VailTheme.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('VAIL', style: VailTheme.wordmark),
-              const SizedBox(height: VailTheme.sm),
-              Text(
-                'VERSATILE ARTIFICIAL INTELLIGENCE LAYER',
-                style: VailTheme.mono.copyWith(color: VailTheme.textSecondary),
-              ),
-              const SizedBox(height: VailTheme.xxl),
-              Text(
-                'Welcome.',
-                style: VailTheme.body.copyWith(color: VailTheme.textPrimary),
-              ),
-              const SizedBox(height: VailTheme.md),
-              Text(
-                'Vail is your intelligent layer — built to think, write, analyse, and assist across everything you do. Type a message below to get started.',
-                style: VailTheme.bodySmall.copyWith(
-                  color: VailTheme.textSecondary,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: VailTheme.xxl),
-              const _CapabilityHints(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CapabilityHints extends StatelessWidget {
-  const _CapabilityHints();
-
   static const _hints = [
     (icon: Icons.edit_note_rounded, label: 'Draft documents and reports'),
     (icon: Icons.search_rounded, label: 'Research and summarise topics'),
     (icon: Icons.code_rounded, label: 'Write and review code'),
-    (icon: Icons.chat_bubble_outline_rounded, label: 'Think through complex problems'),
+    (icon: Icons.psychology_rounded, label: 'Think through complex problems'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: _hints.map((hint) => Padding(
-        padding: const EdgeInsets.only(bottom: VailTheme.sm),
-        child: Row(
+    return Center(
+      child: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(hint.icon, size: 13, color: VailTheme.accent),
-            const SizedBox(width: VailTheme.sm),
+            // Wordmark row
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: VailTheme.primaryContainer,
+                    borderRadius:
+                        BorderRadius.circular(VailTheme.radiusSm),
+                    border: Border.all(
+                      color: VailTheme.primary.withValues(alpha: 0.25),
+                    ),
+                    boxShadow: VailTheme.aiCardGlow,
+                  ),
+                  child: const Icon(
+                    Icons.eco_rounded,
+                    color: VailTheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: VailTheme.md),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Vail AI',
+                      style: VailTheme.heading.copyWith(
+                        color: VailTheme.primary,
+                      ),
+                    ),
+                    Text(
+                      'Forest Sanctuary',
+                      style: VailTheme.caption.copyWith(
+                        color: VailTheme.onSurfaceVariant
+                            .withValues(alpha: 0.4),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: VailTheme.xxl),
             Text(
-              hint.label,
-              style: VailTheme.bodySmall.copyWith(color: VailTheme.textSecondary),
+              'How can I help you today?',
+              style: VailTheme.heading.copyWith(fontSize: 22),
+            ),
+            const SizedBox(height: VailTheme.md),
+            Text(
+              'Your intelligent layer — built to think, write, analyse, and assist across everything you do.',
+              style: VailTheme.bodySmall.copyWith(
+                color: VailTheme.onSurfaceVariant,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: VailTheme.xxl),
+            ..._hints.map(
+              (h) => Padding(
+                padding: const EdgeInsets.only(bottom: VailTheme.sm),
+                child: Row(
+                  children: [
+                    Icon(h.icon, size: 14, color: VailTheme.primary),
+                    const SizedBox(width: VailTheme.sm),
+                    Text(
+                      h.label,
+                      style: VailTheme.bodySmall.copyWith(
+                        color: VailTheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-      )).toList(),
+      ),
     );
   }
 }
@@ -185,10 +343,11 @@ class _ErrorBanner extends StatelessWidget {
         horizontal: VailTheme.lg,
         vertical: VailTheme.sm,
       ),
-      color: VailTheme.error.withValues(alpha: 0.15),
+      color: VailTheme.error.withValues(alpha: 0.12),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: VailTheme.error, size: 16),
+          const Icon(Icons.error_outline_rounded,
+              color: VailTheme.error, size: 16),
           const SizedBox(width: VailTheme.sm),
           Expanded(
             child: Text(

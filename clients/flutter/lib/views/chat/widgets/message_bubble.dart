@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
@@ -9,15 +8,13 @@ import 'package:vail_app/core/widgets/vail_dialog.dart';
 import 'package:vail_app/data/models/domain/conversation_message.dart';
 import 'package:vail_app/views/chat/widgets/code_block.dart';
 
-/// Terminal-style message block.
+/// Forest Sanctuary message bubble.
 ///
-/// Both user and assistant messages render as full-width bordered blocks
-/// with a header row showing the sender label and status — matching the
-/// PRECISION_TERMINAL design language.
+/// User messages: right-aligned, dark surface, no header label.
+/// Assistant messages: left-aligned, AI avatar + "Vail Core" label,
+/// emerald glow border, bento action grid for long responses.
 class MessageBubble extends StatelessWidget {
   final ConversationMessage message;
-
-  /// Zero-based position in the messages list. Used to generate INPUT_XXXX IDs.
   final int index;
 
   const MessageBubble({
@@ -28,228 +25,183 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: VailTheme.lg,
-        vertical: VailTheme.xs + 1,
-      ),
-      decoration: BoxDecoration(
-        color: message.isFromUser ? VailTheme.userBubble : VailTheme.surface,
-        border: Border.all(
-          color: message.isFromUser
-              ? VailTheme.accent.withValues(alpha: 0.15)
-              : VailTheme.border,
-        ),
-        borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _MessageHeader(message: message, index: index),
-          const Divider(height: 1, thickness: 1, color: VailTheme.border),
-          _MessageContent(message: message),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Header row ────────────────────────────────────────────────────────────────
-
-class _MessageHeader extends StatelessWidget {
-  final ConversationMessage message;
-  final int index;
-
-  const _MessageHeader({required this.message, required this.index});
-
-  String get _inputId => 'INPUT_${(index + 1).toString().padLeft(4, '0')}';
-
-  String get _assistantStatus {
-    if (message.isStreaming && message.content.isEmpty) return 'PROCESSING';
-    if (message.isStreaming) return 'STREAMING';
-    return 'COMPLETE';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (message.isFromUser) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.md,
-          vertical: VailTheme.sm - 1,
-        ),
-        child: Row(
-          children: [
-            Text(
-              'USER',
-              style: VailTheme.mono.copyWith(
-                fontSize: 8,
-                color: VailTheme.textSecondary,
-                letterSpacing: 1.5,
-              ),
-            ),
-            Text(
-              ' // $_inputId',
-              style: VailTheme.mono.copyWith(
-                fontSize: 8,
-                color: VailTheme.textMuted,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Assistant
     return Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.md,
-        vertical: VailTheme.sm - 1,
+        horizontal: VailTheme.lg,
+        vertical: VailTheme.xs + 2,
       ),
-      child: Row(
-        children: [
-          Text(
-            'VAIL_ASSISTANT',
-            style: VailTheme.mono.copyWith(
-              fontSize: 8,
-              color: VailTheme.accent,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(width: VailTheme.sm),
-          _StatusBadge(status: _assistantStatus),
-        ],
-      ),
+      child: message.isFromUser
+          ? _UserBubble(message: message)
+          : _AssistantBubble(message: message),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String status;
+// ── User bubble ───────────────────────────────────────────────────────────────
 
-  const _StatusBadge({required this.status});
+class _UserBubble extends StatelessWidget {
+  final ConversationMessage message;
 
-  Color get _color {
-    switch (status) {
-      case 'COMPLETE':
-        return VailTheme.accent;
-      case 'STREAMING':
-        return const Color(0xFFE5C07B);
-      case 'PROCESSING':
-        return VailTheme.textSecondary;
-      default:
-        return VailTheme.textMuted;
-    }
-  }
+  const _UserBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.sm, vertical: 1),
-      decoration: BoxDecoration(
-        border: Border.all(color: _color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (status == 'STREAMING' || status == 'PROCESSING')
-            Padding(
-              padding: const EdgeInsets.only(right: 3),
-              child: SizedBox(
-                width: 5,
-                height: 5,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1,
-                  color: _color,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Flexible(
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: VailTheme.lg + 4,
+              vertical: VailTheme.md + 2,
+            ),
+            decoration: BoxDecoration(
+              color: VailTheme.surfaceContainerHigh,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(VailTheme.radiusLg),
+                topRight: Radius.circular(VailTheme.radiusLg),
+                bottomLeft: Radius.circular(VailTheme.radiusLg),
+                bottomRight: Radius.circular(VailTheme.radiusSm),
+              ),
+              border: Border.all(color: VailTheme.ghostBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (message.imageBytes != null) ...[
+                  _AttachedImage(bytes: message.imageBytes!),
+                  const SizedBox(height: VailTheme.sm),
+                ],
+                SelectableText(
+                  message.content,
+                  style: VailTheme.body.copyWith(color: VailTheme.onSurface),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Assistant bubble ──────────────────────────────────────────────────────────
+
+class _AssistantBubble extends StatelessWidget {
+  final ConversationMessage message;
+
+  const _AssistantBubble({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // AI avatar
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: VailTheme.primaryContainer,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: VailTheme.primary.withValues(alpha: 0.2),
+            ),
+          ),
+          child: const Icon(
+            Icons.eco_rounded,
+            color: VailTheme.primary,
+            size: 16,
+          ),
+        ),
+        const SizedBox(width: VailTheme.sm),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // "Vail Core" label
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: VailTheme.xs),
+                child: Text(
+                  'Vail Core',
+                  style: VailTheme.caption.copyWith(
+                    color: VailTheme.primary,
+                    letterSpacing: 1.5,
+                  ),
                 ),
               ),
-            ),
-          Text(
-            status,
-            style: VailTheme.mono.copyWith(
-              fontSize: 7,
-              color: _color,
-              letterSpacing: 1,
-            ),
+              // Bubble
+              Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.85,
+                ),
+                decoration: BoxDecoration(
+                  color: VailTheme.surfaceContainer,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(VailTheme.radiusSm),
+                    topRight: Radius.circular(VailTheme.radiusLg),
+                    bottomLeft: Radius.circular(VailTheme.radiusLg),
+                    bottomRight: Radius.circular(VailTheme.radiusLg),
+                  ),
+                  border: Border.all(
+                    color: VailTheme.primary.withValues(alpha: 0.2),
+                  ),
+                  boxShadow: VailTheme.aiCardGlow,
+                ),
+                padding: const EdgeInsets.all(VailTheme.lg),
+                child: _AssistantContent(message: message),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-// ── Message content ───────────────────────────────────────────────────────────
+// ── Assistant message content ─────────────────────────────────────────────────
 
-class _MessageContent extends StatelessWidget {
+class _AssistantContent extends StatelessWidget {
   final ConversationMessage message;
 
-  const _MessageContent({required this.message});
+  const _AssistantContent({required this.message});
 
   @override
   Widget build(BuildContext context) {
-    if (message.isFromUser) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (message.imageBytes != null) ...[
-              _AttachedImage(bytes: message.imageBytes!),
-              const SizedBox(height: VailTheme.sm),
-            ],
-            SelectableText(
-              message.content,
-              style: VailTheme.body.copyWith(color: VailTheme.onUserBubble),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Assistant — typing indicator or markdown
     if (message.isStreaming && message.content.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(
-          VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
-        ),
-        child: _TypingIndicator(),
-      );
+      return const _TypingIndicator();
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          MarkdownBody(
-            data: message.content,
-            selectable: !message.isStreaming,
-            styleSheet: _markdownStyles(),
-            builders: {'code': _CodeElementBuilder()},
-            onTapLink: (text, href, title) {
-              if (href == null) return;
-              final uri = Uri.tryParse(href);
-              if (uri != null) _confirmExternalLink(context, uri);
-            },
-          ),
-          if (message.isStreaming) ...[
-            const SizedBox(height: VailTheme.sm),
-            const SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(
-                  strokeWidth: 1.5, color: VailTheme.accent),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MarkdownBody(
+          data: message.content,
+          selectable: !message.isStreaming,
+          styleSheet: _markdownStyles(),
+          builders: {'code': _CodeElementBuilder()},
+          onTapLink: (text, href, title) {
+            if (href == null) return;
+            final uri = Uri.tryParse(href);
+            if (uri != null) _confirmExternalLink(context, uri);
+          },
+        ),
+        if (message.isStreaming) ...[
+          const SizedBox(height: VailTheme.sm),
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: VailTheme.primary.withValues(alpha: 0.7),
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -260,37 +212,34 @@ class _MessageContent extends StatelessWidget {
 
     final confirmed = await showVailDialog<bool>(
       context: context,
-      title: 'EXTERNAL LINK',
+      title: 'External Link',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'You are about to leave Vail and open an external website.',
-            style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
+            style: VailTheme.body.copyWith(color: VailTheme.onSurfaceVariant),
           ),
           const SizedBox(height: VailTheme.md),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(VailTheme.md),
             decoration: BoxDecoration(
-              color: VailTheme.background,
-              border: Border.all(color: VailTheme.border),
+              color: VailTheme.surfaceContainerLow,
+              border: Border.all(color: VailTheme.ghostBorder),
               borderRadius: BorderRadius.circular(VailTheme.radiusSm),
             ),
             child: Text(
               display,
-              style: VailTheme.mono.copyWith(
-                color: VailTheme.accent,
-                fontSize: 10,
-              ),
+              style: VailTheme.bodySmall.copyWith(color: VailTheme.primary),
             ),
           ),
         ],
       ),
       actions: const [
-        VailDialogAction(label: 'CANCEL', value: false),
-        VailDialogAction(label: 'PROCEED', value: true, isPrimary: true),
+        VailDialogAction(label: 'Cancel', value: false),
+        VailDialogAction(label: 'Open link', value: true, isPrimary: true),
       ],
     );
 
@@ -305,44 +254,135 @@ class _MessageContent extends StatelessWidget {
       strong: VailTheme.body.copyWith(fontWeight: FontWeight.w700),
       em: VailTheme.body.copyWith(fontStyle: FontStyle.italic),
       h1: VailTheme.heading,
-      h2: VailTheme.heading.copyWith(fontSize: 20),
-      h3: VailTheme.body.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
-      h4: VailTheme.body.copyWith(fontWeight: FontWeight.w600),
-      h5: VailTheme.body.copyWith(fontWeight: FontWeight.w600, color: VailTheme.textSecondary),
+      h2: VailTheme.heading.copyWith(fontSize: 18),
+      h3: VailTheme.subheading.copyWith(fontSize: 16),
+      h4: VailTheme.label.copyWith(fontWeight: FontWeight.w700),
+      h5: VailTheme.label.copyWith(color: VailTheme.onSurfaceVariant),
       h6: VailTheme.bodySmall.copyWith(fontWeight: FontWeight.w600),
-      code: const TextStyle(
-        fontFamily: 'JetBrains Mono',
-        fontSize: 12,
-        color: VailTheme.accent,
-        backgroundColor: VailTheme.accentSubtle,
-      ),
+      code: VailTheme.inlineCode,
       codeblockDecoration: BoxDecoration(
-        color: VailTheme.background,
-        border: Border.all(color: VailTheme.border),
+        color: const Color(0xFF031109),
+        border: Border.all(color: VailTheme.ghostBorder),
         borderRadius: BorderRadius.circular(VailTheme.radiusSm),
       ),
       codeblockPadding: const EdgeInsets.all(VailTheme.md),
-      blockquotePadding: const EdgeInsets.only(left: VailTheme.md, top: VailTheme.xs, bottom: VailTheme.xs),
+      blockquotePadding: const EdgeInsets.only(
+        left: VailTheme.md,
+        top: VailTheme.xs,
+        bottom: VailTheme.xs,
+      ),
       blockquoteDecoration: BoxDecoration(
         border: Border(
-          left: BorderSide(color: VailTheme.accent.withValues(alpha: 0.5), width: 2),
+          left: BorderSide(
+            color: VailTheme.primary.withValues(alpha: 0.4),
+            width: 3,
+          ),
         ),
+        color: VailTheme.primaryContainer,
       ),
-      listBullet: VailTheme.body.copyWith(color: VailTheme.accent),
+      listBullet: VailTheme.body.copyWith(color: VailTheme.primary),
       listIndent: 20,
-      tableHead: VailTheme.body.copyWith(fontWeight: FontWeight.w700),
+      tableHead: VailTheme.label.copyWith(fontWeight: FontWeight.w700),
       tableBody: VailTheme.bodySmall,
-      tableCellsPadding: const EdgeInsets.symmetric(horizontal: VailTheme.md, vertical: VailTheme.sm),
-      tableBorder: TableBorder.all(color: VailTheme.border, width: 1,
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm)),
+      tableCellsPadding: const EdgeInsets.symmetric(
+        horizontal: VailTheme.md,
+        vertical: VailTheme.sm,
+      ),
+      tableBorder: TableBorder.all(
+        color: VailTheme.ghostBorder,
+        width: 1,
+        borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+      ),
       tableColumnWidth: const FlexColumnWidth(),
       a: VailTheme.body.copyWith(
-        color: VailTheme.accent,
+        color: VailTheme.primary,
         decoration: TextDecoration.underline,
-        decorationColor: VailTheme.accent.withValues(alpha: 0.5),
+        decorationColor: VailTheme.primary.withValues(alpha: 0.4),
       ),
       horizontalRuleDecoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
+        border: Border(
+          bottom: BorderSide(color: Color(0x0DFFFFFF)),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Bento action cards ─────────────────────────────────────────────────────────
+// Rendered below long assistant responses as contextual quick-action chips.
+
+class BentoActionGrid extends StatelessWidget {
+  const BentoActionGrid({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: VailTheme.md),
+      child: Wrap(
+        spacing: VailTheme.sm,
+        runSpacing: VailTheme.sm,
+        children: [
+          _BentoChip(
+            icon: Icons.edit_note_rounded,
+            label: 'Refine this',
+            onTap: () {},
+          ),
+          _BentoChip(
+            icon: Icons.summarize_rounded,
+            label: 'Summarise',
+            onTap: () {},
+          ),
+          _BentoChip(
+            icon: Icons.content_copy_rounded,
+            label: 'Copy',
+            onTap: () {},
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BentoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BentoChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: VailTheme.md,
+          vertical: VailTheme.xs + 2,
+        ),
+        decoration: BoxDecoration(
+          color: VailTheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+          border: Border.all(color: VailTheme.ghostBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: VailTheme.primary),
+            const SizedBox(width: VailTheme.xs + 2),
+            Text(
+              label,
+              style: VailTheme.caption.copyWith(
+                color: VailTheme.onSurface,
+                fontSize: 11,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -382,7 +422,7 @@ class _AttachedImage extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(VailTheme.radiusSm),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 260, maxHeight: 200),
+        constraints: const BoxConstraints(maxWidth: 280, maxHeight: 220),
         child: Image.memory(bytes, fit: BoxFit.cover),
       ),
     );
@@ -402,9 +442,9 @@ class _TypingIndicator extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _Dot(delay: Duration.zero),
-          SizedBox(width: 4),
+          SizedBox(width: 5),
           _Dot(delay: Duration(milliseconds: 160)),
-          SizedBox(width: 4),
+          SizedBox(width: 5),
           _Dot(delay: Duration(milliseconds: 320)),
         ],
       ),
@@ -429,7 +469,9 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        duration: const Duration(milliseconds: 600), vsync: this);
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
     _opacity = Tween<double>(begin: 0.2, end: 1.0).animate(_ctrl);
     Future.delayed(widget.delay, () {
       if (mounted) _ctrl.repeat(reverse: true);
@@ -447,10 +489,10 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
     return FadeTransition(
       opacity: _opacity,
       child: Container(
-        width: 4,
-        height: 4,
+        width: 5,
+        height: 5,
         decoration: const BoxDecoration(
-          color: VailTheme.accent,
+          color: VailTheme.primary,
           shape: BoxShape.circle,
         ),
       ),

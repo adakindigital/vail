@@ -34,10 +34,10 @@ class VailDialog<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: VailTheme.surface,
+      backgroundColor: VailTheme.surfaceContainer,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(VailTheme.radiusMd),
-        side: const BorderSide(color: VailTheme.border),
+        borderRadius: BorderRadius.circular(VailTheme.radiusXl),
+        side: const BorderSide(color: VailTheme.ghostBorder),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -85,25 +85,24 @@ class _DialogHeader extends StatelessWidget {
         vertical: VailTheme.md,
       ),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
+        border: Border(bottom: BorderSide(color: VailTheme.ghostBorder)),
       ),
       child: Row(
         children: [
           Container(
-            width: 6,
-            height: 6,
+            width: 7,
+            height: 7,
             decoration: const BoxDecoration(
-              color: VailTheme.accent,
+              color: VailTheme.primary,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: VailTheme.sm),
           Text(
             title,
-            style: VailTheme.mono.copyWith(
-              color: VailTheme.textPrimary,
-              fontSize: 11,
-              letterSpacing: 2,
+            style: VailTheme.label.copyWith(
+              color: VailTheme.onSurface,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -119,25 +118,23 @@ class _DialogActionButton<T> extends StatelessWidget {
 
   const _DialogActionButton({required this.action});
 
-  Color get _borderColor {
-    if (action.isDestructive) return VailTheme.error;
-    if (action.isPrimary) return VailTheme.accent;
-    return VailTheme.border;
-  }
-
-  Color get _textColor {
-    if (action.isDestructive) return VailTheme.error;
-    if (action.isPrimary) return VailTheme.accent;
-    return VailTheme.textSecondary;
-  }
-
-  Color get _bgColor {
-    if (action.isPrimary) return VailTheme.accentSubtle;
-    return Colors.transparent;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final isPrimary = action.isPrimary;
+    final isDestructive = action.isDestructive;
+
+    final bgColor = isPrimary
+        ? VailTheme.primary
+        : isDestructive
+            ? VailTheme.error.withValues(alpha: 0.1)
+            : Colors.transparent;
+
+    final textColor = isPrimary
+        ? VailTheme.onPrimary
+        : isDestructive
+            ? VailTheme.error
+            : VailTheme.onSurfaceVariant;
+
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(action.value),
       behavior: HitTestBehavior.opaque,
@@ -147,15 +144,18 @@ class _DialogActionButton<T> extends StatelessWidget {
           vertical: VailTheme.sm,
         ),
         decoration: BoxDecoration(
-          color: _bgColor,
-          border: Border.all(color: _borderColor),
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+          color: bgColor,
+          border: isPrimary ? null : Border.all(color: VailTheme.ghostBorder),
+          borderRadius: BorderRadius.circular(
+            isPrimary ? VailTheme.radiusFull : VailTheme.radiusSm,
+          ),
+          boxShadow: isPrimary ? VailTheme.primaryGlow : null,
         ),
         child: Text(
           action.label,
-          style: VailTheme.mono.copyWith(
-            color: _textColor,
-            letterSpacing: 1.5,
+          style: VailTheme.label.copyWith(
+            color: textColor,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

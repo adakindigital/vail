@@ -132,7 +132,7 @@ class _TerminalTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: VailTheme.xs),
-          const Text('VAIL', style: VailTheme.brandLabel),
+          Text('VAIL', style: VailTheme.brandLabel),
           const SizedBox(width: VailTheme.xs),
           Text(
             '// DOC_WRITER',

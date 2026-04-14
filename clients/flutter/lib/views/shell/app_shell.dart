@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vail_app/core/platform/responsive.dart';
@@ -14,13 +16,8 @@ import 'package:vail_app/views/shell/desktop_shell.dart';
 
 /// Root shell — holds all ViewModels for the lifetime of the app.
 ///
-/// Uses [Responsive.isDesktop] to switch between layouts:
-/// - Mobile : tab-based layout with bottom navigation bar.
-/// - Desktop: sidebar + content area layout ([DesktopShell]).
-///
-/// The [IndexedStack] of views is created once per build and passed to
-/// whichever layout is active — state is preserved on orientation and
-/// window-resize changes via Flutter's widget reconciliation.
+/// Mobile: tab-based layout with a glassmorphic Forest Sanctuary bottom nav.
+/// Desktop: [DesktopShell] with sidebar.
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -94,7 +91,8 @@ class _MobileShell extends StatelessWidget {
     return Scaffold(
       backgroundColor: VailTheme.background,
       body: contentStack,
-      bottomNavigationBar: _VailBottomNav(
+      extendBody: true,
+      bottomNavigationBar: _ForestBottomNav(
         activeIndex: activeIndex,
         onTap: onSwitch,
       ),
@@ -102,41 +100,72 @@ class _MobileShell extends StatelessWidget {
   }
 }
 
-// ── Bottom nav (mobile only) ──────────────────────────────────────────────────
+// ── Forest Sanctuary bottom nav ───────────────────────────────────────────────
 
-class _VailBottomNav extends StatelessWidget {
+class _ForestBottomNav extends StatelessWidget {
   final int activeIndex;
   final void Function(int) onTap;
 
-  const _VailBottomNav({
+  const _ForestBottomNav({
     required this.activeIndex,
     required this.onTap,
   });
 
   static const _items = [
-    (icon: Icons.chat_bubble_outline_rounded, label: 'CHAT'),
-    (icon: Icons.history_rounded, label: 'HISTORY'),
-    (icon: Icons.insert_drive_file_outlined, label: 'DOCS'),
-    (icon: Icons.settings_outlined, label: 'SETTINGS'),
+    (
+      icon: Icons.chat_bubble_outline_rounded,
+      activeIcon: Icons.chat_bubble_rounded,
+      label: 'Chat',
+    ),
+    (
+      icon: Icons.history_rounded,
+      activeIcon: Icons.history_rounded,
+      label: 'History',
+    ),
+    (
+      icon: Icons.description_outlined,
+      activeIcon: Icons.description_rounded,
+      label: 'Docs',
+    ),
+    (
+      icon: Icons.person_outline_rounded,
+      activeIcon: Icons.person_rounded,
+      label: 'Profile',
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: VailTheme.surface,
-        border: Border(top: BorderSide(color: VailTheme.border)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 58,
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: VailTheme.background.withValues(alpha: 0.95),
+            border: const Border(
+              top: BorderSide(color: VailTheme.ghostBorder),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: VailTheme.primary.withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          padding: EdgeInsets.only(
+            top: VailTheme.sm,
+            bottom: bottomPad > 0 ? bottomPad : VailTheme.md,
+          ),
           child: Row(
             children: [
               for (int i = 0; i < _items.length; i++)
                 Expanded(
                   child: _NavItem(
                     icon: _items[i].icon,
+                    activeIcon: _items[i].activeIcon,
                     label: _items[i].label,
                     isActive: activeIndex == i,
                     onTap: () => onTap(i),
@@ -152,12 +181,14 @@ class _VailBottomNav extends StatelessWidget {
 
 class _NavItem extends StatelessWidget {
   final IconData icon;
+  final IconData activeIcon;
   final String label;
   final bool isActive;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
+    required this.activeIcon,
     required this.label,
     required this.isActive,
     required this.onTap,
@@ -165,18 +196,44 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive ? VailTheme.accent : VailTheme.textMuted;
-
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 3),
-          Text(label, style: VailTheme.mono.copyWith(color: color)),
-        ],
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(
+          vertical: VailTheme.xs + 1,
+          horizontal: VailTheme.md,
+        ),
+        decoration: isActive
+            ? BoxDecoration(
+                color: VailTheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+              )
+            : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isActive ? activeIcon : icon,
+              color: isActive
+                  ? VailTheme.primary
+                  : VailTheme.onSurfaceVariant.withValues(alpha: 0.4),
+              size: 22,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: VailTheme.caption.copyWith(
+                color: isActive
+                    ? VailTheme.primary
+                    : VailTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                fontSize: 9,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

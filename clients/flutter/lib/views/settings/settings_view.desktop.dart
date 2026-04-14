@@ -495,14 +495,14 @@ class _VisualModeRow extends StatelessWidget {
         border: Border.all(color: VailTheme.border),
         borderRadius: BorderRadius.circular(VailTheme.radiusMd),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Visual Mode', style: VailTheme.body),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'Toggle between dark and light interface.',
                   style: VailTheme.bodySmall,

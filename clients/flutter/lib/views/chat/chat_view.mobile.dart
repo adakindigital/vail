@@ -11,14 +11,12 @@ import 'package:vail_app/views/chat/widgets/response_insight_card.dart';
 import 'package:vail_app/views/documents/new_document_sheet.dart';
 import 'package:vail_app/views/upgrade/upgrade_sheet.dart';
 
-/// Minimum assistant response length (characters) that triggers the insight card.
 const int _kInsightThreshold = 400;
 
-/// Mobile chat UI — full-screen layout with brand header, message list,
-/// and input bar. Safe-area padding handled internally.
+/// Mobile chat UI — Forest Sanctuary layout.
 ///
-/// Rendered by [ChatView] via [ScreenTypeLayout.builder].
-/// Do not use directly — always go through [ChatView].
+/// Glassmorphic top bar, pill model selector, reversed message list,
+/// gradient-faded pill input fixed above bottom nav.
 class ChatViewMobile extends StatelessWidget {
   final void Function(int) onSwitchTab;
   final void Function(String input, {Uint8List? imageBytes}) onSend;
@@ -34,6 +32,7 @@ class ChatViewMobile extends StatelessWidget {
     return Column(
       children: [
         _ChatHeader(statusTop: MediaQuery.of(context).padding.top),
+        // Error banner
         Selector<ChatViewModel, ChatState>(
           selector: (_, vm) => vm.state,
           builder: (context, state, child) {
@@ -44,6 +43,7 @@ class ChatViewMobile extends StatelessWidget {
             );
           },
         ),
+        // Message list
         Expanded(
           child: Selector<ChatViewModel, int>(
             selector: (_, vm) => vm.changeCount,
@@ -52,7 +52,10 @@ class ChatViewMobile extends StatelessWidget {
               final messages = vm.messages;
               if (messages.isEmpty) return const _EmptyState();
               return ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
+                padding: const EdgeInsets.only(
+                  top: VailTheme.md,
+                  bottom: VailTheme.xxl,
+                ),
                 reverse: true,
                 itemCount: messages.length,
                 itemBuilder: (context, index) {
@@ -70,7 +73,8 @@ class ChatViewMobile extends StatelessWidget {
                       MessageBubble(message: msg, index: msgIndex),
                       if (showInsight)
                         ResponseInsightCard(
-                          mode: resolveInsightMode(msg.model ?? vm.activeModel, false),
+                          mode: resolveInsightMode(
+                              msg.model ?? vm.activeModel, false),
                           activeModel: msg.model ?? vm.activeModel,
                           onDismiss: () => vm.dismissInsightCard(msgIndex),
                           onUpgrade: () => showUpgradeSheet(context),
@@ -82,6 +86,7 @@ class ChatViewMobile extends StatelessWidget {
             },
           ),
         ),
+        // Input
         Selector<ChatViewModel, bool>(
           selector: (_, vm) => vm.isSending,
           builder: (context, isSending, child) => ChatInput(
@@ -95,7 +100,7 @@ class ChatViewMobile extends StatelessWidget {
   }
 }
 
-// ── Header ────────────────────────────────────────────────────────────────────
+// ── Glassmorphic header ───────────────────────────────────────────────────────
 
 class _ChatHeader extends StatelessWidget {
   final double statusTop;
@@ -104,53 +109,72 @@ class _ChatHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        top: statusTop + VailTheme.md,
-        left: VailTheme.lg,
-        right: VailTheme.lg,
-        bottom: VailTheme.md,
-      ),
-      decoration: const BoxDecoration(
-        color: VailTheme.background,
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
-      ),
-      child: Row(
-        children: [
-          Selector<ChatViewModel, String>(
-            selector: (_, vm) => vm.activeModel,
-            builder: (context, model, child) => _ModelChip(
-              model: model,
-              onTap: () => _showModelPicker(context, model),
+    return ClipRect(
+      child: Container(
+        padding: EdgeInsets.only(
+          top: statusTop + VailTheme.sm,
+          left: VailTheme.lg,
+          right: VailTheme.lg,
+          bottom: VailTheme.sm,
+        ),
+        decoration: BoxDecoration(
+          color: VailTheme.background.withValues(alpha: 0.95),
+          border: const Border(
+            bottom: BorderSide(color: VailTheme.ghostBorder),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Brand
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.eco_rounded,
+                    color: VailTheme.primary, size: 20),
+                const SizedBox(width: VailTheme.xs + 2),
+                Text(
+                  'Vail AI',
+                  style: VailTheme.heading.copyWith(
+                    color: VailTheme.primary,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: VailTheme.sm),
-          const _TierBadge(isPro: false), // TODO: wire to auth/subscription state
-          const Spacer(),
-          _NewChatButton(
-            onTap: () => context.read<ChatViewModel>().startNewSession(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showModelPicker(BuildContext context, String activeModel) {
-    final vm = context.read<ChatViewModel>();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => _ModelPickerSheet(
-        activeModel: activeModel,
-        onSelect: (model) {
-          vm.setModel(model);
-          Navigator.of(sheetContext).pop();
-        },
-        onUpgradeRequired: (model) {
-          Navigator.of(sheetContext).pop();
-          _showUpgradeDialog(context, model);
-        },
+            const Spacer(),
+            // Model tier segmented pill
+            Selector<ChatViewModel, String>(
+              selector: (_, vm) => vm.activeModel,
+              builder: (context, model, child) => _ModelSegmentedPill(
+                activeModel: model,
+                onSelect: (tier) {
+                  if (AppConstants.isPremiumTier(tier)) {
+                    _showUpgradeDialog(context, tier);
+                  } else {
+                    context.read<ChatViewModel>().setModel(tier);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: VailTheme.sm),
+            // New chat
+            GestureDetector(
+              onTap: () => context.read<ChatViewModel>().startNewSession(),
+              child: Container(
+                padding: const EdgeInsets.all(VailTheme.xs + 2),
+                decoration: BoxDecoration(
+                  border: Border.all(color: VailTheme.ghostBorder),
+                  borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+                ),
+                child: const Icon(
+                  Icons.add_rounded,
+                  color: VailTheme.onSurfaceVariant,
+                  size: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -158,485 +182,117 @@ class _ChatHeader extends StatelessWidget {
   Future<void> _showUpgradeDialog(BuildContext context, String tier) async {
     final proceed = await showVailDialog<bool>(
       context: context,
-      title: 'UPGRADE REQUIRED',
+      title: 'Upgrade required',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: VailTheme.sm,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE5C07B).withValues(alpha: 0.1),
-                  border: Border.all(
-                    color: const Color(0xFFE5C07B).withValues(alpha: 0.4),
-                  ),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text(
-                  AppConstants.modelDisplayName(tier),
-                  style: VailTheme.mono.copyWith(
-                    color: const Color(0xFFE5C07B),
-                    fontSize: 9,
-                    letterSpacing: 2,
-                  ),
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: VailTheme.sm,
+              vertical: VailTheme.xs,
+            ),
+            decoration: BoxDecoration(
+              color: VailTheme.primaryContainer,
+              borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+              border: Border.all(
+                color: VailTheme.primary.withValues(alpha: 0.3),
               ),
-              const SizedBox(width: VailTheme.sm),
-              Text(
-                'PRO PLAN REQUIRED',
-                style: VailTheme.mono.copyWith(
-                  color: VailTheme.textMuted,
-                  fontSize: 9,
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ],
+            ),
+            child: Text(
+              AppConstants.modelDisplayName(tier),
+              style: VailTheme.caption.copyWith(color: VailTheme.primary),
+            ),
           ),
           const SizedBox(height: VailTheme.md),
           Text(
             AppConstants.modelDescription(tier),
-            style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
+            style: VailTheme.body.copyWith(color: VailTheme.onSurfaceVariant),
           ),
-          const SizedBox(height: VailTheme.md),
-          const Divider(height: 1, color: VailTheme.border),
-          const SizedBox(height: VailTheme.md),
-          for (final feature in _premiumFeatures(tier))
-            Padding(
-              padding: const EdgeInsets.only(bottom: VailTheme.sm),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_rounded,
-                      color: VailTheme.accent, size: 12),
-                  const SizedBox(width: VailTheme.sm),
-                  Text(feature, style: VailTheme.bodySmall),
-                ],
-              ),
-            ),
         ],
       ),
       actions: const [
-        VailDialogAction(label: 'CANCEL', value: false),
-        VailDialogAction(label: 'UPGRADE', value: true, isPrimary: true),
+        VailDialogAction(label: 'Cancel', value: false),
+        VailDialogAction(label: 'Upgrade', value: true, isPrimary: true),
       ],
     );
     if (proceed == true && context.mounted) showUpgradeSheet(context);
   }
-
-  List<String> _premiumFeatures(String tier) => switch (tier) {
-        'vail-pro' => [
-            'Extended context window',
-            'Priority routing',
-            'Complex multi-step reasoning',
-            'Faster response times',
-          ],
-        'vail-max' => [
-            'Maximum reasoning capability',
-            'Largest context window',
-            'Dedicated compute allocation',
-            'Enterprise-grade SLA',
-          ],
-        _ => ['Advanced capabilities'],
-      };
 }
 
-// ── Model chip (header) ───────────────────────────────────────────────────────
+// ── Model segmented pill (Lite / Core / Pro) ──────────────────────────────────
 
-class _ModelChip extends StatelessWidget {
-  final String model;
-  final VoidCallback onTap;
-
-  const _ModelChip({required this.model, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.md,
-          vertical: VailTheme.xs + 2,
-        ),
-        decoration: BoxDecoration(
-          color: VailTheme.accentSubtle,
-          border: Border.all(color: VailTheme.accent.withValues(alpha: 0.35)),
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 5,
-              height: 5,
-              decoration: const BoxDecoration(
-                color: VailTheme.accent,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: VailTheme.xs + 2),
-            Text(
-              AppConstants.modelDisplayName(model),
-              style: VailTheme.mono.copyWith(
-                color: VailTheme.accent,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(width: 3),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: VailTheme.accent,
-              size: 14,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Tier badge ────────────────────────────────────────────────────────────────
-
-class _TierBadge extends StatelessWidget {
-  final bool isPro;
-
-  const _TierBadge({required this.isPro});
-
-  @override
-  Widget build(BuildContext context) {
-    const proColor = Color(0xFFE5C07B);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.sm,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: isPro ? proColor.withValues(alpha: 0.08) : Colors.transparent,
-        border: Border.all(
-          color: isPro
-              ? proColor.withValues(alpha: 0.45)
-              : VailTheme.border,
-        ),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        isPro ? 'PRO' : 'FREE',
-        style: VailTheme.mono.copyWith(
-          color: isPro ? proColor : VailTheme.textMuted,
-          fontSize: 8,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-}
-
-// ── Model picker bottom sheet ─────────────────────────────────────────────────
-
-class _ModelPickerSheet extends StatelessWidget {
+class _ModelSegmentedPill extends StatelessWidget {
   final String activeModel;
   final void Function(String) onSelect;
-  final void Function(String) onUpgradeRequired;
 
-  const _ModelPickerSheet({
+  const _ModelSegmentedPill({
     required this.activeModel,
     required this.onSelect,
-    required this.onUpgradeRequired,
   });
 
-  static const _freeTiers = ['vail-lite', 'vail'];
-  static const _proTiers = ['vail-pro', 'vail-max'];
+  static const _tiers = [
+    ('vail-lite', 'Lite'),
+    ('vail', 'Core'),
+    ('vail-pro', 'Pro'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: VailTheme.surface,
-        border: Border(top: BorderSide(color: VailTheme.border)),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(VailTheme.radiusLg),
-          topRight: Radius.circular(VailTheme.radiusLg),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Drag handle
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(
-                top: VailTheme.md,
-                bottom: VailTheme.sm,
-              ),
-              child: Container(
-                width: 36,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: VailTheme.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-          // Sheet header
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: VailTheme.lg,
-              vertical: VailTheme.md,
-            ),
-            child: Row(
-              children: [
-                Text('SELECT MODEL', style: VailTheme.sectionLabel),
-                const Spacer(),
-                const _TierBadge(isPro: false), // TODO: user tier
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: VailTheme.border),
-          // Free tier
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              VailTheme.lg, VailTheme.md, VailTheme.lg, VailTheme.sm,
-            ),
-            child: Text(
-              'FREE TIER',
-              style: VailTheme.mono
-                  .copyWith(color: VailTheme.textMuted, fontSize: 9),
-            ),
-          ),
-          for (final tier in _freeTiers)
-            _ModelPickerRow(
-              tier: tier,
-              isActive: tier == activeModel,
-              isPremium: false,
-              onTap: () => onSelect(tier),
-            ),
-          // Pro tier
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              VailTheme.lg, VailTheme.lg, VailTheme.lg, VailTheme.sm,
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'PRO TIER',
-                  style: VailTheme.mono
-                      .copyWith(color: VailTheme.textMuted, fontSize: 9),
-                ),
-                const SizedBox(width: VailTheme.sm),
-                _UpgradeTag(),
-              ],
-            ),
-          ),
-          for (final tier in _proTiers)
-            _ModelPickerRow(
-              tier: tier,
-              isActive: tier == activeModel,
-              isPremium: true,
-              isComingSoon: AppConstants.isComingSoonTier(tier),
-              onTap: AppConstants.isComingSoonTier(tier)
-                  ? () {}
-                  : () => onUpgradeRequired(tier),
-            ),
-          SizedBox(
-            height: MediaQuery.of(context).padding.bottom + VailTheme.lg,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UpgradeTag extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.xs + 2,
-        vertical: 1,
-      ),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFE5C07B).withValues(alpha: 0.1),
-        border: Border.all(
-          color: const Color(0xFFE5C07B).withValues(alpha: 0.35),
-        ),
-        borderRadius: BorderRadius.circular(3),
+        color: VailTheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+        border: Border.all(color: VailTheme.ghostBorder),
       ),
-      child: Text(
-        'UPGRADE',
-        style: VailTheme.mono.copyWith(
-          color: const Color(0xFFE5C07B),
-          fontSize: 7,
-          letterSpacing: 1,
-        ),
-      ),
-    );
-  }
-}
-
-class _ModelPickerRow extends StatelessWidget {
-  final String tier;
-  final bool isActive;
-  final bool isPremium;
-  final bool isComingSoon;
-  final VoidCallback onTap;
-
-  const _ModelPickerRow({
-    required this.tier,
-    required this.isActive,
-    required this.isPremium,
-    required this.onTap,
-    this.isComingSoon = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const proColor = Color(0xFFE5C07B);
-    const soonColor = Color(0xFF4A4A4A);
-
-    final nameColor = isActive
-        ? VailTheme.accent
-        : isComingSoon
-            ? soonColor
-            : isPremium
-                ? proColor.withValues(alpha: 0.65)
-                : VailTheme.textSecondary;
-
-    final dotColor = isActive
-        ? VailTheme.accent
-        : isComingSoon
-            ? soonColor
-            : isPremium
-                ? proColor.withValues(alpha: 0.3)
-                : VailTheme.border;
-
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.lg,
-          vertical: VailTheme.md,
-        ),
-        color: isActive ? VailTheme.accentSubtle : Colors.transparent,
-        child: Row(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: 5,
-              height: 5,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: _tiers.map((t) {
+          final isActive = t.$1 == activeModel;
+          return GestureDetector(
+            onTap: () => onSelect(t.$1),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(
+                horizontal: VailTheme.md,
+                vertical: VailTheme.xs + 1,
+              ),
               decoration: BoxDecoration(
-                color: dotColor,
-                shape: BoxShape.circle,
+                color: isActive
+                    ? VailTheme.primary.withValues(alpha: 0.15)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+              ),
+              child: Text(
+                t.$2,
+                style: VailTheme.caption.copyWith(
+                  color: isActive
+                      ? VailTheme.primary
+                      : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  fontSize: 10,
+                  letterSpacing: 0.8,
+                ),
               ),
             ),
-            const SizedBox(width: VailTheme.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        AppConstants.modelDisplayName(tier),
-                        style: VailTheme.mono.copyWith(
-                          color: nameColor,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      if (isComingSoon) ...[
-                        const SizedBox(width: VailTheme.sm),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: VailTheme.xs + 1,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: soonColor),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            'SOON',
-                            style: VailTheme.mono.copyWith(
-                              color: soonColor,
-                              fontSize: 7,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    AppConstants.modelDescription(tier),
-                    style: VailTheme.bodySmall.copyWith(
-                      color: VailTheme.textMuted,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isActive)
-              const Icon(Icons.check_rounded,
-                  color: VailTheme.accent, size: 14)
-            else if (isComingSoon)
-              const Icon(Icons.schedule_rounded,
-                  color: soonColor, size: 14)
-            else if (isPremium)
-              const Icon(Icons.lock_outline_rounded,
-                  color: proColor, size: 14),
-          ],
-        ),
+          );
+        }).toList(),
       ),
     );
   }
 }
 
-class _NewChatButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _NewChatButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.md,
-          vertical: VailTheme.xs + 2,
-        ),
-        decoration: BoxDecoration(
-          border: Border.all(color: VailTheme.accent),
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('NEW CHAT',
-                style: VailTheme.mono.copyWith(color: VailTheme.accent)),
-            const SizedBox(width: VailTheme.xs),
-            const Icon(Icons.arrow_forward_rounded,
-                color: VailTheme.accent, size: 12),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────────
+// ── Forest Sanctuary empty state ──────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
+
+  static const _hints = [
+    (icon: Icons.edit_note_rounded, label: 'Draft documents and reports'),
+    (icon: Icons.search_rounded, label: 'Research and summarise topics'),
+    (icon: Icons.code_rounded, label: 'Write and review code'),
+    (icon: Icons.psychology_rounded, label: 'Think through complex problems'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -650,74 +306,76 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Spacer(),
-            const Text('VAIL', style: VailTheme.wordmark),
-            const SizedBox(height: VailTheme.sm),
+            // Emerald eco icon in a glow circle
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: VailTheme.primaryContainer,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: VailTheme.primary.withValues(alpha: 0.25),
+                ),
+                boxShadow: VailTheme.aiCardGlow,
+              ),
+              child: const Icon(
+                Icons.eco_rounded,
+                color: VailTheme.primary,
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: VailTheme.lg),
             Text(
-              'VERSATILE ARTIFICIAL INTELLIGENCE LAYER',
-              style: VailTheme.mono.copyWith(color: VailTheme.textSecondary),
-              textAlign: TextAlign.center,
+              'Vail AI',
+              style: VailTheme.display.copyWith(color: VailTheme.primary),
+            ),
+            const SizedBox(height: VailTheme.xs),
+            Text(
+              'Forest Sanctuary',
+              style: VailTheme.caption.copyWith(
+                color: VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                letterSpacing: 2.0,
+              ),
             ),
             const SizedBox(height: VailTheme.xxl),
             Text(
-              'Welcome.',
-              style: VailTheme.body.copyWith(color: VailTheme.textPrimary),
+              'How can I help you today?',
+              style: VailTheme.subheading,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: VailTheme.md),
             Text(
-              'Vail is your intelligent layer — built to think, write, analyse, and assist across everything you do. Type a message below to get started.',
+              'Your intelligent layer — built to think, write, analyse, and assist across everything you do.',
               style: VailTheme.bodySmall.copyWith(
-                color: VailTheme.textSecondary,
+                color: VailTheme.onSurfaceVariant,
                 height: 1.6,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: VailTheme.xxl),
-            const _CapabilityHints(),
-            const Spacer(),
-            Text(
-              'SYSTEM AGENT  ·  PROVISION STATE: IDLE',
-              style: VailTheme.mono.copyWith(
-                fontSize: 9,
-                color: VailTheme.textMuted,
-                letterSpacing: 2,
+            // Capability hints
+            ..._hints.map(
+              (h) => Padding(
+                padding: const EdgeInsets.only(bottom: VailTheme.sm),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(h.icon, size: 14, color: VailTheme.primary),
+                    const SizedBox(width: VailTheme.sm),
+                    Text(
+                      h.label,
+                      style: VailTheme.bodySmall.copyWith(
+                        color: VailTheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: VailTheme.sm),
+            const Spacer(),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CapabilityHints extends StatelessWidget {
-  const _CapabilityHints();
-
-  static const _hints = [
-    (icon: Icons.edit_note_rounded, label: 'Draft documents and reports'),
-    (icon: Icons.search_rounded, label: 'Research and summarise topics'),
-    (icon: Icons.code_rounded, label: 'Write and review code'),
-    (icon: Icons.chat_bubble_outline_rounded, label: 'Think through complex problems'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: _hints.map((hint) => Padding(
-        padding: const EdgeInsets.only(bottom: VailTheme.sm),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(hint.icon, size: 13, color: VailTheme.accent),
-            const SizedBox(width: VailTheme.sm),
-            Text(
-              hint.label,
-              style: VailTheme.bodySmall.copyWith(color: VailTheme.textSecondary),
-            ),
-          ],
-        ),
-      )).toList(),
     );
   }
 }
@@ -738,10 +396,11 @@ class _ErrorBanner extends StatelessWidget {
         horizontal: VailTheme.lg,
         vertical: VailTheme.sm,
       ),
-      color: VailTheme.error.withValues(alpha: 0.15),
+      color: VailTheme.error.withValues(alpha: 0.12),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: VailTheme.error, size: 16),
+          const Icon(Icons.error_outline_rounded,
+              color: VailTheme.error, size: 16),
           const SizedBox(width: VailTheme.sm),
           Expanded(
             child: Text(

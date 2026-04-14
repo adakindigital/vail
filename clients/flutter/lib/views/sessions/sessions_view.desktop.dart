@@ -127,15 +127,15 @@ class _TableHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             flex: 5,
             child: Text('TITLE', style: VailTheme.sectionLabel),
           ),
-          const Expanded(
+          Expanded(
             flex: 2,
             child: Text('UPDATED', style: VailTheme.sectionLabel),
           ),
-          const Expanded(
+          Expanded(
             flex: 1,
             child: Text('MESSAGES', style: VailTheme.sectionLabel),
           ),
@@ -291,7 +291,7 @@ class _EmptyState extends StatelessWidget {
           Text('No sessions yet',
               style: VailTheme.body.copyWith(color: VailTheme.textSecondary)),
           const SizedBox(height: VailTheme.sm),
-          const Text('Start a conversation to see it here.',
+          Text('Start a conversation to see it here.',
               style: VailTheme.bodySmall),
         ],
       ),

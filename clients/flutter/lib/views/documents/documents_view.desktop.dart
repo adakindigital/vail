@@ -53,7 +53,7 @@ class _DesktopToolbar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Text(
+          Text(
             'AI-produced documents, ready to copy or share.',
             style: VailTheme.bodySmall,
           ),
@@ -238,7 +238,7 @@ class _EmptyState extends StatelessWidget {
               style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
             ),
             const SizedBox(height: VailTheme.sm),
-            const Text(
+            Text(
               'Ask Vail to write a report, proposal, email,\nor any other document — it appears here.',
               style: VailTheme.bodySmall,
               textAlign: TextAlign.center,

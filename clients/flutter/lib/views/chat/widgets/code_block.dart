@@ -64,8 +64,8 @@ class _CodeBlockState extends State<CodeBlock> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: VailTheme.background,
-        border: Border.all(color: VailTheme.border),
+        color: const Color(0xFF031109), // surfaceContainerLowest
+        border: Border.all(color: VailTheme.ghostBorder),
         borderRadius: BorderRadius.circular(VailTheme.radiusSm),
       ),
       child: Column(
@@ -111,21 +111,21 @@ class _CodeHeader extends StatelessWidget {
         bottom: VailTheme.xs + 2,
       ),
       decoration: const BoxDecoration(
-        color: VailTheme.surface,
+        color: Color(0xFF0A2918), // surfaceContainerLow
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(VailTheme.radiusSm - 1),
           topRight: Radius.circular(VailTheme.radiusSm - 1),
         ),
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
+        border: Border(bottom: BorderSide(color: VailTheme.ghostBorder)),
       ),
       child: Row(
         children: [
           Text(
-            language == 'plaintext' ? 'CODE' : language.toUpperCase(),
-            style: VailTheme.mono.copyWith(
-              fontSize: 9,
-              letterSpacing: 1.5,
-              color: VailTheme.textSecondary,
+            language == 'plaintext' ? 'code' : language.toLowerCase(),
+            style: VailTheme.caption.copyWith(
+              fontSize: 10,
+              color: VailTheme.primary.withValues(alpha: 0.7),
+              letterSpacing: 0.5,
             ),
           ),
           const Spacer(),
@@ -139,8 +139,10 @@ class _CodeHeader extends StatelessWidget {
                 child: Icon(
                   copied ? Icons.check_rounded : Icons.copy_outlined,
                   key: ValueKey(copied),
-                  size: 13,
-                  color: copied ? VailTheme.accent : VailTheme.textSecondary,
+                  size: 14,
+                  color: copied
+                      ? VailTheme.primary
+                      : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
               ),
             ),
