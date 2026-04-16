@@ -1,91 +1,50 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:vail_app/core/constants/app_constants.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
+import 'package:vail_app/core/widgets/vail_advanced_badge.dart';
+import 'package:vail_app/core/widgets/vail_error_banner.dart';
 import 'package:vail_app/views/chat/chat_viewmodel.dart';
+import 'package:vail_app/views/settings/settings_viewmodel.dart';
 import 'package:vail_app/views/chat/widgets/chat_input.dart';
 import 'package:vail_app/views/chat/widgets/message_bubble.dart';
-import 'package:vail_app/views/chat/widgets/response_insight_card.dart';
-import 'package:vail_app/views/documents/new_document_sheet.dart';
 import 'package:vail_app/views/upgrade/upgrade_sheet.dart';
 
-/// Minimum assistant response length (characters) that triggers the insight card.
-const int _kDesktopInsightThreshold = 400;
-
-/// Desktop chat UI — no brand header (the desktop shell owns top-bar context),
-/// message list expands to fill the shell's content area.
-///
-/// Rendered by [ChatView] via [ScreenTypeLayout.builder].
-/// Do not use directly — always go through [ChatView].
 class ChatViewDesktop extends StatelessWidget {
   final void Function(int) onSwitchTab;
   final void Function(String input, {Uint8List? imageBytes}) onSend;
 
-  const ChatViewDesktop({
-    required this.onSwitchTab,
-    required this.onSend,
-    super.key,
-  });
+  const ChatViewDesktop({required this.onSwitchTab, required this.onSend, super.key});
 
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<ChatViewModel>();
     return Column(
       children: [
-        // No header — desktop shell's top bar provides context.
-        Selector<ChatViewModel, ChatState>(
-          selector: (_, vm) => vm.state,
-          builder: (context, state, child) {
-            if (state != ChatState.error) return const SizedBox.shrink();
-            return _ErrorBanner(
-              message: context.read<ChatViewModel>().errorMessage,
-              onDismiss: () => context.read<ChatViewModel>().dismissError(),
-            );
-          },
-        ),
+        const _DesktopChatTopBar(),
+        if (vm.state == ChatState.error) VailErrorBanner(message: vm.errorMessage, onDismiss: vm.dismissError),
         Expanded(
-          child: Selector<ChatViewModel, int>(
-            selector: (_, vm) => vm.changeCount,
-            builder: (context, count, child) {
-              final vm = context.read<ChatViewModel>();
-              final messages = vm.messages;
-              if (messages.isEmpty) return const _EmptyState();
-              return ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
-                reverse: true,
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final msgIndex = messages.length - 1 - index;
-                  final msg = messages[msgIndex];
-
-                  final showInsight = msg.isFromAssistant &&
-                      !msg.isStreaming &&
-                      msg.content.length >= _kDesktopInsightThreshold &&
-                      !vm.isInsightCardDismissed(msgIndex);
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      MessageBubble(message: msg, index: msgIndex),
-                      if (showInsight)
-                        ResponseInsightCard(
-                          mode: resolveInsightMode(msg.model ?? vm.activeModel, false),
-                          activeModel: msg.model ?? vm.activeModel,
-                          onDismiss: () => vm.dismissInsightCard(msgIndex),
-                          onUpgrade: () => showUpgradeSheet(context),
-                        ),
-                    ],
-                  );
-                },
+          child: vm.messages.isEmpty ? const _EmptyState() : ListView.builder(
+            padding: const EdgeInsets.only(top: VailTheme.xl, bottom: VailTheme.xxl),
+            reverse: true,
+            itemCount: vm.messages.length,
+            itemBuilder: (context, index) {
+              final msgIndex = vm.messages.length - 1 - index;
+              final msg = vm.messages[msgIndex];
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: MessageBubble(message: msg, index: msgIndex),
+                ),
               );
             },
           ),
         ),
-        Selector<ChatViewModel, bool>(
-          selector: (_, vm) => vm.isSending,
-          builder: (context, isSending, child) => ChatInput(
-            enabled: !isSending,
-            onSend: onSend,
-            onNewDocument: () => showNewDocumentSheet(context),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: ChatInput(enabled: !vm.isSending, onSend: onSend),
           ),
         ),
       ],
@@ -93,114 +52,84 @@ class ChatViewDesktop extends StatelessWidget {
   }
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+class _DesktopChatTopBar extends StatelessWidget {
+  const _DesktopChatTopBar();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.xl),
+      decoration: BoxDecoration(color: VailTheme.background.withValues(alpha: 0.95), border: const Border(bottom: BorderSide(color: VailTheme.ghostBorder))),
+      child: Row(
+        children: [
+          Selector<ChatViewModel, String>(selector: (_, vm) => vm.activeModel, builder: (context, model, _) => _DesktopModelPill(activeModel: model)),
+          const Spacer(),
+          const VailAdvancedBadge(),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopModelPill extends StatelessWidget {
+  final String activeModel;
+  const _DesktopModelPill({required this.activeModel});
+  static const _tiers = [('vail-lite', 'Lite'), ('vail', 'Core'), ('vail-pro', 'Pro')];
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(color: VailTheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(VailTheme.radiusFull), border: Border.all(color: VailTheme.ghostBorder)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: _tiers.map((t) => GestureDetector(
+          onTap: () => AppConstants.isPremiumTier(t.$1)
+              ? showUpgradeSheet(
+                  context,
+                  onProActivated: () {
+                    context.read<SettingsViewModel>().setIsPro(true);
+                    context.read<ChatViewModel>()
+                      ..setModel(t.$1)
+                      ..refreshPlan();
+                  },
+                )
+              : context.read<ChatViewModel>().setModel(t.$1),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg, vertical: VailTheme.xs + 1),
+            decoration: BoxDecoration(color: t.$1 == activeModel ? VailTheme.primary.withValues(alpha: 0.12) : Colors.transparent, borderRadius: BorderRadius.circular(VailTheme.radiusFull)),
+            child: Text(t.$2, style: VailTheme.caption.copyWith(color: t.$1 == activeModel ? VailTheme.primary : VailTheme.onSurfaceVariant.withValues(alpha: 0.5), fontSize: 10)),
+          ),
+        )).toList(),
+      ),
+    );
+  }
+}
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
-
   @override
   Widget build(BuildContext context) {
     return Center(
       child: SizedBox(
-        width: 480,
-        child: Padding(
-          padding: const EdgeInsets.all(VailTheme.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('VAIL', style: VailTheme.wordmark),
-              const SizedBox(height: VailTheme.sm),
-              Text(
-                'VERSATILE ARTIFICIAL INTELLIGENCE LAYER',
-                style: VailTheme.mono.copyWith(color: VailTheme.textSecondary),
-              ),
-              const SizedBox(height: VailTheme.xxl),
-              Text(
-                'Welcome.',
-                style: VailTheme.body.copyWith(color: VailTheme.textPrimary),
-              ),
-              const SizedBox(height: VailTheme.md),
-              Text(
-                'Vail is your intelligent layer — built to think, write, analyse, and assist across everything you do. Type a message below to get started.',
-                style: VailTheme.bodySmall.copyWith(
-                  color: VailTheme.textSecondary,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: VailTheme.xxl),
-              const _CapabilityHints(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CapabilityHints extends StatelessWidget {
-  const _CapabilityHints();
-
-  static const _hints = [
-    (icon: Icons.edit_note_rounded, label: 'Draft documents and reports'),
-    (icon: Icons.search_rounded, label: 'Research and summarise topics'),
-    (icon: Icons.code_rounded, label: 'Write and review code'),
-    (icon: Icons.chat_bubble_outline_rounded, label: 'Think through complex problems'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: _hints.map((hint) => Padding(
-        padding: const EdgeInsets.only(bottom: VailTheme.sm),
-        child: Row(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(hint.icon, size: 13, color: VailTheme.accent),
-            const SizedBox(width: VailTheme.sm),
-            Text(
-              hint.label,
-              style: VailTheme.bodySmall.copyWith(color: VailTheme.textSecondary),
+            Row(
+              children: [
+                Container(width: 48, height: 48, decoration: BoxDecoration(color: VailTheme.primaryContainer, borderRadius: BorderRadius.circular(VailTheme.radiusSm), border: Border.all(color: VailTheme.primary.withValues(alpha: 0.25)), boxShadow: VailTheme.aiCardGlow), child: const Icon(Icons.auto_awesome_rounded, color: VailTheme.primary, size: 22)),
+                const SizedBox(width: VailTheme.md),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Vail AI', style: VailTheme.heading.copyWith(color: VailTheme.primary)), Text('BY ADAKIN DIGITAL', style: VailTheme.caption.copyWith(color: VailTheme.onSurfaceVariant.withValues(alpha: 0.4), letterSpacing: 1.5), maxLines: 1, overflow: TextOverflow.ellipsis)])),
+              ],
             ),
+            const SizedBox(height: VailTheme.xxl),
+            Text('How can I help you today?', style: VailTheme.heading.copyWith(fontSize: 22)),
+            const SizedBox(height: VailTheme.md),
+            Text('Your intelligent layer — built to think, write, analyse, and assist across everything you do.', style: VailTheme.bodySmall.copyWith(color: VailTheme.onSurfaceVariant, height: 1.6)),
           ],
         ),
-      )).toList(),
-    );
-  }
-}
-
-// ── Error banner ──────────────────────────────────────────────────────────────
-
-class _ErrorBanner extends StatelessWidget {
-  final String message;
-  final VoidCallback onDismiss;
-
-  const _ErrorBanner({required this.message, required this.onDismiss});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.lg,
-        vertical: VailTheme.sm,
-      ),
-      color: VailTheme.error.withValues(alpha: 0.15),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline_rounded, color: VailTheme.error, size: 16),
-          const SizedBox(width: VailTheme.sm),
-          Expanded(
-            child: Text(
-              message,
-              style: VailTheme.bodySmall.copyWith(color: VailTheme.error),
-            ),
-          ),
-          GestureDetector(
-            onTap: onDismiss,
-            child: const Icon(Icons.close_rounded, color: VailTheme.error, size: 16),
-          ),
-        ],
       ),
     );
   }

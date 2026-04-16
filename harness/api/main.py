@@ -19,6 +19,7 @@ Environment variables:
 """
 
 import os
+import re
 import json
 import time
 import asyncio
@@ -35,7 +36,7 @@ from api import ratelimit
 from api.router import select_tier
 from api.sessions import build_router
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger("vail.gateway")
 
 BACKEND_URL = os.getenv("VAIL_BACKEND_URL", "http://localhost:8080").rstrip("/")
@@ -47,6 +48,187 @@ BACKEND_MODEL = os.getenv("VAIL_BACKEND_MODEL", "")
 MAX_HISTORY_TURNS = int(os.getenv("VAIL_MAX_HISTORY_TURNS", "20"))
 
 _backend_model_id: str | None = None
+
+# Tiers that receive the dynamic UI system prompt injection.
+_DYNAMIC_UI_TIERS: frozenset[str] = frozenset({"vail-pro", "vail-max"})
+
+# ---------------------------------------------------------------------------
+# Dynamic context-gathering (vail_ui) support
+# ---------------------------------------------------------------------------
+
+_VAIL_UI_SYSTEM_PROMPT = """You are Vail — an intelligent assistant that can render interactive UI components directly in the conversation to gather context and improve your output quality.
+
+WHEN TO EMIT A UI BLOCK:
+- The user's request is vague or ambiguous and more context would significantly improve your answer.
+- The task would produce a long-form document — offer the Doc Writer handoff.
+- Do NOT emit UI blocks for simple factual questions, short answers, or any task where you already have enough context.
+
+HOW TO EMIT A UI BLOCK:
+1. Write your full conversational response as normal text first.
+2. After your text response is complete, on a new line, output ONE JSON object inside <vail_ui>...</vail_ui> tags.
+CRITICAL: Your response MUST begin with plain conversational text. NEVER start your response with <vail_ui>. NEVER output ONLY a <vail_ui> block. If you output <vail_ui> without preceding text, the block will be lost entirely.
+
+SCHEMA (form with input fields):
+<vail_ui>
+{
+  "ui_type": "form",
+  "title": "TELL ME MORE",
+  "description": "One sentence explaining what the form is for.",
+  "fields": [
+    {"key": "unique_key", "label": "Field label", "type": "text", "placeholder": "optional hint"},
+    {"key": "tone", "label": "Tone", "type": "dropdown", "options": ["Option A", "Option B", "Option C"]},
+    {"key": "details", "label": "Extra details", "type": "textarea"}
+  ],
+  "actions": [
+    {"label": "Generate", "payload": "Please write it now with the context I've provided.", "is_primary": true},
+    {"label": "Skip", "payload": "Skip — write a generic version.", "is_primary": false}
+  ]
+}
+</vail_ui>
+
+SCHEMA (doc writer handoff — no input fields):
+<vail_ui>
+{
+  "ui_type": "action",
+  "title": "OPEN IN DOC WRITER",
+  "description": "Review and edit this document with full formatting controls.",
+  "fields": [],
+  "actions": [
+    {"label": "Open in Doc Writer", "payload": "open_doc_writer", "is_primary": true}
+  ]
+}
+</vail_ui>
+
+RULES:
+- One <vail_ui> block per response at most.
+- Keep field count to 3 or fewer.
+- Action payloads for non-special buttons should be a natural-language instruction the model can act on.
+- The special payload "open_doc_writer" opens the document editor and must not be used for anything else.
+"""
+
+
+class _VailUIParser:
+    """Streaming interceptor that strips <vail_ui>...</vail_ui> blocks.
+
+    Feed each incoming delta string to process(). It returns the cleaned text
+    that should be streamed to the client. The <vail_ui> block is silently
+    consumed; parsed components accumulate in self.components.
+
+    Call flush() after the stream ends to release any buffered clean text.
+    """
+
+    OPEN = "<vail_ui>"
+    # Accept </vail_ui> with optional internal whitespace (model sometimes
+    # adds a space or newline before the closing '>').
+    CLOSE = "</vail_ui>"
+    _CLOSE_RE = re.compile(r"</\s*vail_ui\s*>", re.IGNORECASE)
+
+    def __init__(self) -> None:
+        self._buf: str = ""
+        self._in_block: bool = False
+        self._ui_buf: str = ""
+        self.components: list[dict] = []
+
+    def process(self, delta: str) -> str:
+        """Return cleaned text to emit. May return empty string."""
+        to_emit = ""
+        self._buf += delta
+
+        while self._buf:
+            if self._in_block:
+                close_match = self._CLOSE_RE.search(self._buf)
+                if close_match is None:
+                    self._ui_buf += self._buf
+                    self._buf = ""
+                else:
+                    self._ui_buf += self._buf[:close_match.start()]
+                    self._buf = self._buf[close_match.end():]
+                    self._in_block = False
+                    self._try_parse_component()
+                    self._ui_buf = ""
+            else:
+                open_idx = self._buf.find(self.OPEN)
+                if open_idx == -1:
+                    # Only hold back if the buffer ends with a genuine prefix of
+                    # OPEN — i.e., the chunk boundary might have split the tag.
+                    # In normal responses (no tag in sight) emit everything
+                    # immediately so there is zero streaming lag.
+                    held = 0
+                    for prefix_len in range(min(len(self.OPEN) - 1, len(self._buf)), 0, -1):
+                        if self._buf.endswith(self.OPEN[:prefix_len]):
+                            held = prefix_len
+                            break
+                    to_emit += self._buf[:-held] if held else self._buf
+                    self._buf = self._buf[-held:] if held else ""
+                    break
+                else:
+                    to_emit += self._buf[:open_idx]
+                    self._buf = self._buf[open_idx + len(self.OPEN):]
+                    self._in_block = True
+                    self._ui_buf = ""
+
+        return to_emit
+
+    def _try_parse_component(self) -> None:
+        """Attempt to parse _ui_buf as JSON and add to components.
+
+        Tries several recovery strategies before giving up:
+        1. Direct parse of stripped content.
+        2. Strip markdown code fences (model sometimes wraps JSON in ```json).
+        3. Regex extraction of the first balanced {...} object.
+        """
+        raw = self._ui_buf.strip()
+        if not raw:
+            return
+
+        log.debug("dynamic_ui  raw block preview: %r", raw[:200])
+
+        # Strategy 1 — direct parse.
+        try:
+            self.components.append(json.loads(raw))
+            return
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2 — strip markdown code fences.
+        stripped = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+        stripped = re.sub(r"\s*```\s*$", "", stripped, flags=re.MULTILINE).strip()
+        try:
+            self.components.append(json.loads(stripped))
+            return
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 3 — find the first complete {...} object in the content.
+        # This handles cases where the model added commentary before/after JSON.
+        brace_match = re.search(r"\{.*\}", stripped, re.DOTALL)
+        if brace_match:
+            try:
+                self.components.append(json.loads(brace_match.group()))
+                return
+            except json.JSONDecodeError:
+                pass
+
+        log.warning(
+            "dynamic_ui  failed to parse component JSON (len=%d, preview=%r)",
+            len(raw), raw[:300],
+        )
+
+    def flush(self) -> str:
+        """Release any remaining buffer at end of stream.
+
+        If we are still inside a block (model never emitted the close tag),
+        attempt to parse whatever JSON was collected so the component is not
+        silently lost. The pre-block text in _buf is returned as clean text.
+        """
+        if self._in_block:
+            log.warning("dynamic_ui  stream ended mid-block — attempting salvage parse")
+            self._try_parse_component()
+            self._in_block = False
+            self._ui_buf = ""
+        remaining = self._buf
+        self._buf = ""
+        return remaining
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +341,16 @@ async def chat_completions(
     if routed_tier != model:
         log.info("router   %s → %s", model, routed_tier)
 
+    # Inject dynamic UI system prompt for eligible tiers.
+    # Prepend before existing system messages so it acts as the base instruction layer.
+    if routed_tier in _DYNAMIC_UI_TIERS:
+        ui_prompt_msg = {"role": "system", "content": _VAIL_UI_SYSTEM_PROMPT}
+        existing_system = [m for m in messages if m.get("role") == "system"]
+        non_system_msgs = [m for m in messages if m.get("role") != "system"]
+        messages = [ui_prompt_msg] + existing_system + non_system_msgs
+        body = {**body, "messages": messages}
+        log.info("dynamic_ui  injected system prompt for tier=%s", routed_tier)
+
     if _backend_model_id:
         body = {**body, "model": _backend_model_id}
     else:
@@ -194,6 +386,9 @@ async def chat_completions(
     log.info("response model=%s  latency=%.0fms  status=%d", model, elapsed_ms, resp.status_code)
 
     data = resp.json()
+    # Inject the Vail tier name into the response so the client knows which
+    # model produced the response, even if the backend ID is different.
+    data["model"] = model
     response_text = None
     tokens_in = tokens_out = None
 
@@ -209,7 +404,7 @@ async def chat_completions(
         if session_id and response_text:
             user_content = _last_user_content(messages)
             if user_content:
-                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text))
+                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text, model))
 
     asyncio.create_task(database.log_interaction(
         session_id=session_id, model=model, messages=messages,
@@ -231,6 +426,7 @@ async def _stream_from_backend(
     response_chunks: list[str] = []
     usage_data: dict = {}
     error: str | None = None
+    parser = _VailUIParser()
 
     try:
         async with httpx.AsyncClient(timeout=None) as client:
@@ -244,7 +440,6 @@ async def _stream_from_backend(
                     error_body = await resp.aread()
                     error = f"backend {resp.status_code}: {error_body[:200]}"
                     log.error("backend error  status=%d  body=%s", resp.status_code, error_body[:200])
-                    # Try to extract a readable message from the backend error body
                     try:
                         err_data = json.loads(error_body)
                         err_msg = err_data.get("error") or err_data.get("message") or f"Backend error ({resp.status_code})"
@@ -255,19 +450,88 @@ async def _stream_from_backend(
                     yield f"data: {json.dumps({'error': {'message': err_msg}})}\n\n"
                     return
 
-                async for chunk in resp.aiter_bytes():
-                    decoded = chunk.decode("utf-8", errors="replace")
-                    response_chunks.append(decoded)
-                    # Capture usage from the final SSE chunk if present
-                    for line in decoded.splitlines():
-                        if line.startswith("data: ") and line[6:] != "[DONE]":
-                            try:
-                                data = json.loads(line[6:])
-                                if "usage" in data:
-                                    usage_data = data["usage"]
-                            except Exception:
-                                pass
-                    yield chunk
+                buffer = ""
+                done_seen = False
+
+                async for chunk in resp.aiter_text():
+                    buffer += chunk
+                    while "\n\n" in buffer:
+                        block, buffer = buffer.split("\n\n", 1)
+                        response_chunks.append(block + "\n\n")
+
+                        output_lines = []
+                        for line in block.splitlines():
+                            if line.startswith("data: "):
+                                raw_payload = line[6:].strip()
+                                if raw_payload == "[DONE]":
+                                    done_seen = True
+                                    # Flush any held parser text before [DONE].
+                                    # Inline it as an extra data line so it
+                                    # arrives in the same HTTP chunk as [DONE],
+                                    # avoiding an extra round-trip.
+                                    flush_text = parser.flush()
+                                    if flush_text:
+                                        flush_chunk = _make_delta_chunk(flush_text, model)
+                                        output_lines.append(f"data: {json.dumps(flush_chunk)}")
+                                    if parser.components:
+                                        ui_chunk = {
+                                            "model": model,
+                                            "ui_components": parser.components,
+                                            "choices": [{"delta": {"content": ""}, "index": 0}],
+                                        }
+                                        output_lines.append(f"data: {json.dumps(ui_chunk)}")
+                                        log.info("dynamic_ui  emitted %d component(s)", len(parser.components))
+                                        parser.components = []
+                                    output_lines.append(line)
+                                    continue
+                                try:
+                                    data = json.loads(raw_payload)
+                                    data["model"] = model
+                                    if "usage" in data:
+                                        usage_data = data["usage"]
+                                    # Intercept delta text through the vail_ui parser.
+                                    delta_content: str = ""
+                                    try:
+                                        delta_content = data["choices"][0]["delta"].get("content") or ""
+                                    except (KeyError, IndexError):
+                                        pass
+                                    if delta_content:
+                                        clean = parser.process(delta_content)
+                                        if clean:
+                                            data["choices"][0]["delta"]["content"] = clean
+                                            output_lines.append(f"data: {json.dumps(data)}")
+                                        # else: chunk is inside a vail_ui block — suppress it.
+                                    else:
+                                        output_lines.append(f"data: {json.dumps(data)}")
+                                except Exception:
+                                    output_lines.append(line)
+                            else:
+                                output_lines.append(line)
+
+                        if output_lines:
+                            yield ("\n".join(output_lines) + "\n\n").encode("utf-8")
+
+                # Handle any remaining buffer content (e.g. backend sent
+                # data: [DONE] without a trailing blank line).
+                if not done_seen and buffer.strip():
+                    for line in buffer.splitlines():
+                        if line.startswith("data: ") and line[6:].strip() == "[DONE]":
+                            done_seen = True
+
+                if not done_seen:
+                    # Stream ended naturally without [DONE] — flush parser.
+                    flush_text = parser.flush()
+                    if flush_text:
+                        flush_chunk = _make_delta_chunk(flush_text, model)
+                        yield f"data: {json.dumps(flush_chunk)}\n\n".encode("utf-8")
+                    if parser.components:
+                        ui_chunk = {
+                            "model": model,
+                            "ui_components": parser.components,
+                            "choices": [{"delta": {"content": ""}, "index": 0}],
+                        }
+                        yield f"data: {json.dumps(ui_chunk)}\n\n".encode("utf-8")
+                        parser.components = []
 
     except httpx.ConnectError:
         error = "backend unreachable"
@@ -279,19 +543,30 @@ async def _stream_from_backend(
         log.info("stream done  model=%s  latency=%.0fms", model, elapsed_ms)
 
         response_text = _extract_content_from_sse("".join(response_chunks))
+        # Strip any vail_ui blocks from the persisted response text.
+        if response_text:
+            response_text = re.sub(r"<vail_ui>.*?</vail_ui>", "", response_text, flags=re.DOTALL).strip()
         tokens_in = usage_data.get("prompt_tokens")
         tokens_out = usage_data.get("completion_tokens")
 
         if session_id and response_text and not error:
             user_content = _last_user_content(messages)
             if user_content:
-                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text))
+                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text, model))
 
         asyncio.create_task(database.log_interaction(
             session_id=session_id, model=model, messages=messages,
             response_text=response_text, tokens_in=tokens_in, tokens_out=tokens_out,
             latency_ms=elapsed_ms, stream=True, error=error,
         ))
+
+
+def _make_delta_chunk(content: str, model: str) -> dict:
+    """Wrap a text string as a minimal OpenAI-compatible delta chunk."""
+    return {
+        "model": model,
+        "choices": [{"delta": {"content": content, "role": "assistant"}, "index": 0}],
+    }
 
 
 async def _generate_session_title(session_id: str, user_content: str) -> None:
@@ -323,10 +598,14 @@ async def _generate_session_title(session_id: str, user_content: str) -> None:
             )
         if resp.status_code == 200:
             data = resp.json()
-            title = data["choices"][0]["message"]["content"].strip().strip('"\'').strip()
-            if title:
-                await database.set_session_title(session_id, title)
-                log.info("title generated  session=%s  title=%r", session_id, title)
+            choices = data.get("choices")
+            if choices and len(choices) > 0:
+                message = choices[0].get("message")
+                if message:
+                    content = message.get("content", "").strip().strip('"\'').strip()
+                    if content:
+                        await database.set_session_title(session_id, content)
+                        log.info("title generated  session=%s  title=%r", session_id, content)
     except Exception as exc:
         log.warning("title generation failed  session=%s  error=%s", session_id, exc)
 
@@ -335,9 +614,10 @@ async def _save_turn_and_title(
     session_id: str,
     user_content: str,
     assistant_content: str,
+    model: str,
 ) -> None:
     """Save the turn and, if it is the first one, generate a session title."""
-    is_first = await database.append_session_turn(session_id, user_content, assistant_content)
+    is_first = await database.append_session_turn(session_id, user_content, assistant_content, model)
     if is_first:
         asyncio.create_task(_generate_session_title(session_id, user_content))
 

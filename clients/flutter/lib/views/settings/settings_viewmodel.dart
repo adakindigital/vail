@@ -12,14 +12,23 @@ class SettingsViewModel extends ChangeNotifier {
   late String _endpoint = _config.endpoint;
   late String _apiKey = _config.apiKey;
   late String _selectedModel = _config.model;
+  late bool _isPro = _config.isPro;
   GatewayStatus _gatewayStatus = GatewayStatus.unknown;
 
   String get endpoint => _endpoint;
   String get apiKey => _apiKey;
   String get selectedModel => _selectedModel;
+  bool get isPro => _isPro;
   GatewayStatus get gatewayStatus => _gatewayStatus;
 
   List<String> get availableModels => AppConstants.modelTiers;
+
+  Future<void> setIsPro(bool value) async {
+    if (_isPro == value) return;
+    _isPro = value;
+    await _config.setIsPro(value);
+    notifyListeners();
+  }
 
   Future<void> saveEndpoint(String value) async {
     _endpoint = value.trim();

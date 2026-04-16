@@ -37,6 +37,13 @@ dependencies:
   # Responsive layout — ScreenTypeLayout.builder for mobile/desktop view selection
   responsive_builder: ^0.7.0
 
+  # Google Fonts — Manrope for Forest Sanctuary design system
+  google_fonts: ^6.2.1
+
+  # PDF generation and export/share
+  pdf: ^3.11.0
+  printing: ^5.13.0
+
   # Icons
   cupertino_icons: ^1.0.8
 

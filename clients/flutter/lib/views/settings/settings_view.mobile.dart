@@ -49,7 +49,7 @@ class _SettingsHeader extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const Expanded(child: Text('Settings', style: VailTheme.heading)),
+          Expanded(child: Text('Settings', style: VailTheme.heading)),
           Text(
             'v${AppConstants.appVersion}',
             style: VailTheme.mono.copyWith(color: VailTheme.textMuted),
@@ -77,6 +77,10 @@ class _SettingsBody extends StatelessWidget {
           _ApiKeyField(),
           SizedBox(height: VailTheme.sm),
           _EndpointField(),
+          SizedBox(height: VailTheme.xxl),
+          _SectionLabel('BILLING'),
+          SizedBox(height: VailTheme.md),
+          _ProPlanToggle(),
           SizedBox(height: VailTheme.xxl),
           _SectionLabel('MODEL SELECTION'),
           SizedBox(height: VailTheme.md),
@@ -112,6 +116,69 @@ class _SectionLabel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg),
       child: Text(text, style: VailTheme.sectionLabel),
+    );
+  }
+}
+
+// ── Pro Plan toggle ───────────────────────────────────────────────────────────
+
+class _ProPlanToggle extends StatelessWidget {
+  const _ProPlanToggle();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: VailTheme.md,
+          vertical: VailTheme.sm,
+        ),
+        decoration: BoxDecoration(
+          color: VailTheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+          border: Border.all(color: VailTheme.ghostBorder),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.bolt_rounded,
+              size: 18,
+              color: Color(0xFFE5C07B),
+            ),
+            const SizedBox(width: VailTheme.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'PRO PLAN',
+                    style: VailTheme.label.copyWith(
+                      color: const Color(0xFFE5C07B),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    'Unlock advanced reasoning',
+                    style: VailTheme.caption.copyWith(
+                      color: VailTheme.textMuted,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: vm.isPro,
+              onChanged: (v) => vm.setIsPro(v),
+              activeTrackColor: const Color(0xFFE5C07B),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -545,14 +612,14 @@ class _VisualModeRow extends StatelessWidget {
           border: Border.all(color: VailTheme.border),
           borderRadius: BorderRadius.circular(VailTheme.radiusMd),
         ),
-        child: const Row(
+        child: Row(
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Visual Mode', style: VailTheme.body),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     'Toggle between dark and light interface.',
                     style: VailTheme.bodySmall,

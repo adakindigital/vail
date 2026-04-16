@@ -1,47 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 
-/// Shows the Vail Pro upgrade paywall.
+/// Vail upgrade paywall — shown when a user selects a Pro/Max tier
+/// or taps the Upgrade Plan button in the sidebar.
 ///
-/// Works on both mobile and desktop — renders as a centred dialog card.
-/// Replace the [_SubscribeButton] TODO with PayFast integration when ready.
-Future<void> showUpgradeSheet(BuildContext context) {
+/// [onProActivated] is called immediately when the user taps the upgrade
+/// button. The caller is responsible for persisting the pro state and
+/// rebuilding affected views.
+///
+// TODO(prod): remove [onProActivated] bypass — replace with PayFast payment
+//             confirmation callback. Pro flag must be set server-side after
+//             successful payment, not client-side.
+Future<void> showUpgradeSheet(
+  BuildContext context, {
+  VoidCallback? onProActivated,
+}) {
   return showDialog<void>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.7),
-    builder: (_) => const _UpgradeDialog(),
+    barrierColor: Colors.black.withValues(alpha: 0.75),
+    builder: (_) => _UpgradeDialog(onProActivated: onProActivated),
   );
 }
 
 // ── Dialog ────────────────────────────────────────────────────────────────────
 
 class _UpgradeDialog extends StatelessWidget {
-  const _UpgradeDialog();
+  // TODO(prod): remove — dev-only bypass (see showUpgradeSheet comment)
+  final VoidCallback? onProActivated;
+
+  const _UpgradeDialog({this.onProActivated});
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 40,
-      ),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
+        constraints: BoxConstraints(
+          maxWidth: 440,
+          maxHeight: MediaQuery.of(context).size.height - 80,
+        ),
         child: Container(
           decoration: BoxDecoration(
-            color: VailTheme.surface,
-            border: Border.all(color: VailTheme.border),
-            borderRadius: BorderRadius.circular(VailTheme.radiusLg),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _UpgradeHeader(),
-              const _PlanCard(),
-              const _FeatureList(),
-              const _UpgradeFooter(),
+            color: VailTheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(VailTheme.radiusXl),
+            border: Border.all(color: VailTheme.ghostBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 40,
+              ),
             ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(VailTheme.radiusXl),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const _UpgradeHeader(),
+                  const _PlanCard(),
+                  const _FeatureList(),
+                  _UpgradeFooter(onProActivated: onProActivated),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -56,64 +79,61 @@ class _UpgradeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return Padding(
       padding: const EdgeInsets.fromLTRB(
         VailTheme.xl, VailTheme.xl, VailTheme.xl, VailTheme.lg,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              // Pro badge
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: VailTheme.sm,
-                  vertical: 3,
+                  vertical: VailTheme.xs,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE5C07B).withValues(alpha: 0.1),
+                  color: VailTheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(VailTheme.radiusSm),
                   border: Border.all(
-                    color: const Color(0xFFE5C07B).withValues(alpha: 0.5),
+                    color: VailTheme.primary.withValues(alpha: 0.3),
                   ),
-                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'PRO',
-                  style: VailTheme.mono.copyWith(
-                    color: const Color(0xFFE5C07B),
+                  style: VailTheme.caption.copyWith(
+                    color: VailTheme.primary,
+                    fontWeight: FontWeight.w800,
                     fontSize: 9,
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
               const Spacer(),
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: const Icon(
-                  Icons.close_rounded,
-                  size: 18,
-                  color: VailTheme.textMuted,
+                child: Container(
+                  padding: const EdgeInsets.all(VailTheme.xs + 2),
+                  decoration: const BoxDecoration(
+                    color: VailTheme.ghostBorder,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: VailTheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: VailTheme.md),
-          Text(
-            'Upgrade to Vail Pro',
-            style: VailTheme.heading.copyWith(fontSize: 22),
-          ),
+          Text('Upgrade to Vail Pro', style: VailTheme.heading),
           const SizedBox(height: VailTheme.sm),
           Text(
-            'Access advanced models, extended context, and priority routing — '
-            'built for complex, real-world work.',
+            'Access advanced models, extended context, and priority routing — built for complex, real-world work.',
             style: VailTheme.bodySmall.copyWith(
-              color: VailTheme.textSecondary,
+              color: VailTheme.onSurfaceVariant,
               height: 1.55,
             ),
           ),
@@ -131,15 +151,15 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        VailTheme.xl, VailTheme.lg, VailTheme.xl, 0,
-      ),
+      padding: const EdgeInsets.fromLTRB(VailTheme.xl, 0, VailTheme.xl, 0),
       child: Container(
         padding: const EdgeInsets.all(VailTheme.lg),
         decoration: BoxDecoration(
-          color: VailTheme.accentSubtle,
-          border: Border.all(color: VailTheme.accent.withValues(alpha: 0.3)),
+          color: VailTheme.primaryContainer,
           borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+          border: Border.all(
+            color: VailTheme.primary.withValues(alpha: 0.25),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -150,18 +170,17 @@ class _PlanCard extends StatelessWidget {
                 children: [
                   Text(
                     'VAIL PRO',
-                    style: VailTheme.mono.copyWith(
-                      color: VailTheme.accent,
-                      fontSize: 11,
-                      letterSpacing: 2.5,
-                      fontWeight: FontWeight.w700,
+                    style: VailTheme.caption.copyWith(
+                      color: VailTheme.primary,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
                     ),
                   ),
                   const SizedBox(height: VailTheme.xs),
                   Text(
                     'Monthly subscription',
                     style: VailTheme.bodySmall.copyWith(
-                      color: VailTheme.textSecondary,
+                      color: VailTheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -172,18 +191,17 @@ class _PlanCard extends StatelessWidget {
               children: [
                 Text(
                   'R149',
-                  style: VailTheme.heading.copyWith(
-                    color: VailTheme.accent,
+                  style: VailTheme.display.copyWith(
+                    color: VailTheme.primary,
                     fontSize: 28,
                     height: 1,
                   ),
                 ),
                 Text(
                   'per month',
-                  style: VailTheme.mono.copyWith(
-                    color: VailTheme.textSecondary,
+                  style: VailTheme.caption.copyWith(
+                    color: VailTheme.onSurfaceVariant,
                     fontSize: 9,
-                    letterSpacing: 1,
                   ),
                 ),
               ],
@@ -202,7 +220,7 @@ class _FeatureList extends StatelessWidget {
 
   static const _features = [
     (
-      title: 'VAIL.CORE + VAIL.PRO models',
+      title: 'Vail Core + Pro models',
       detail: 'More capable models with deeper reasoning and extended context.',
       comingSoon: false,
     ),
@@ -222,7 +240,7 @@ class _FeatureList extends StatelessWidget {
       comingSoon: false,
     ),
     (
-      title: 'VAIL.MAX — maximum capability',
+      title: 'Vail Max — maximum capability',
       detail: 'Our most powerful model tier. Launching soon for Pro members.',
       comingSoon: true,
     ),
@@ -248,7 +266,7 @@ class _FeatureRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const soonColor = Color(0xFF4A4A4A);
+    const soonColor = Color(0xFF4A6355);
     final isComingSoon = feature.comingSoon;
 
     return Padding(
@@ -259,21 +277,23 @@ class _FeatureRow extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Container(
-              width: 16,
-              height: 16,
+              width: 18,
+              height: 18,
               decoration: BoxDecoration(
-                color: isComingSoon ? Colors.transparent : VailTheme.accentSubtle,
+                color: isComingSoon
+                    ? Colors.transparent
+                    : VailTheme.primaryContainer,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isComingSoon
                       ? soonColor
-                      : VailTheme.accent.withValues(alpha: 0.4),
+                      : VailTheme.primary.withValues(alpha: 0.4),
                 ),
               ),
               child: Icon(
                 isComingSoon ? Icons.schedule_rounded : Icons.check_rounded,
-                color: isComingSoon ? soonColor : VailTheme.accent,
-                size: 10,
+                color: isComingSoon ? soonColor : VailTheme.primary,
+                size: 11,
               ),
             ),
           ),
@@ -284,37 +304,38 @@ class _FeatureRow extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      feature.title,
-                      style: VailTheme.body.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: isComingSoon
-                            ? VailTheme.textSecondary
-                            : VailTheme.textPrimary,
+                    Expanded(
+                      child: Text(
+                        feature.title,
+                        style: VailTheme.label.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: isComingSoon
+                              ? VailTheme.onSurfaceVariant
+                              : VailTheme.onSurface,
+                        ),
                       ),
                     ),
-                    if (isComingSoon) ...[
-                      const SizedBox(width: VailTheme.sm),
+                    if (isComingSoon)
                       Container(
+                        margin: const EdgeInsets.only(left: VailTheme.sm),
                         padding: const EdgeInsets.symmetric(
                           horizontal: VailTheme.xs + 1,
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
                           border: Border.all(color: soonColor),
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius:
+                              BorderRadius.circular(VailTheme.radiusSm),
                         ),
                         child: Text(
-                          'COMING SOON',
-                          style: VailTheme.mono.copyWith(
+                          'SOON',
+                          style: VailTheme.caption.copyWith(
                             color: soonColor,
                             fontSize: 7,
-                            letterSpacing: 1,
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -323,7 +344,7 @@ class _FeatureRow extends StatelessWidget {
                   style: VailTheme.bodySmall.copyWith(
                     color: isComingSoon
                         ? VailTheme.textMuted
-                        : VailTheme.textSecondary,
+                        : VailTheme.onSurfaceVariant,
                     height: 1.45,
                   ),
                 ),
@@ -339,7 +360,10 @@ class _FeatureRow extends StatelessWidget {
 // ── Footer + CTA ──────────────────────────────────────────────────────────────
 
 class _UpgradeFooter extends StatelessWidget {
-  const _UpgradeFooter();
+  // TODO(prod): remove — dev-only bypass (see showUpgradeSheet comment)
+  final VoidCallback? onProActivated;
+
+  const _UpgradeFooter({this.onProActivated});
 
   @override
   Widget build(BuildContext context) {
@@ -347,34 +371,34 @@ class _UpgradeFooter extends StatelessWidget {
       padding: const EdgeInsets.all(VailTheme.xl),
       child: Column(
         children: [
-          // Subscribe CTA
           GestureDetector(
             onTap: () {
-              // TODO: initiate PayFast payment flow
+              // TODO(prod): replace with PayFast payment confirmation.
+              //             For now this immediately grants pro access — dev bypass only.
+              onProActivated?.call();
               Navigator.of(context).pop();
             },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: VailTheme.md + 2),
               decoration: BoxDecoration(
-                color: VailTheme.accent,
-                borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+                color: VailTheme.primary,
+                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+                boxShadow: VailTheme.primaryGlow,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(
                     Icons.bolt_rounded,
-                    color: VailTheme.onAccent,
-                    size: 16,
+                    color: VailTheme.onPrimary,
+                    size: 18,
                   ),
                   const SizedBox(width: VailTheme.sm),
                   Text(
-                    'GET PRO  —  R149/MONTH',
-                    style: VailTheme.mono.copyWith(
-                      color: VailTheme.onAccent,
-                      fontSize: 11,
-                      letterSpacing: 1.5,
+                    'Get Pro  —  R149/month',
+                    style: VailTheme.label.copyWith(
+                      color: VailTheme.onPrimary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -383,25 +407,22 @@ class _UpgradeFooter extends StatelessWidget {
             ),
           ),
           const SizedBox(height: VailTheme.md),
-          // Fine print
           Text(
             'Cancel anytime. Billed monthly. Secured by PayFast.',
-            style: VailTheme.mono.copyWith(
+            style: VailTheme.caption.copyWith(
               color: VailTheme.textMuted,
-              fontSize: 8,
-              letterSpacing: 0.5,
+              fontSize: 9,
             ),
           ),
           const SizedBox(height: VailTheme.md),
-          // Maybe later
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             child: Text(
               'Maybe later',
               style: VailTheme.bodySmall.copyWith(
-                color: VailTheme.textSecondary,
+                color: VailTheme.onSurfaceVariant,
                 decoration: TextDecoration.underline,
-                decorationColor: VailTheme.textMuted,
+                decorationColor: VailTheme.ghostBorder,
               ),
             ),
           ),

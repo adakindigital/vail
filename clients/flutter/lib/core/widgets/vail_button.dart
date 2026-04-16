@@ -63,16 +63,21 @@ class VailButton extends StatelessWidget {
       };
 
   Color get _activeBgColor => switch (_variant) {
-        _VailButtonVariant.primary => VailTheme.accentSubtle,
+        _VailButtonVariant.primary => VailTheme.primary,
         _VailButtonVariant.ghost => Colors.transparent,
-        _VailButtonVariant.destructive => const Color(0xFF200808),
+        _VailButtonVariant.destructive => VailTheme.error.withValues(alpha: 0.1),
       };
+
+  // Primary variant uses filled pill — Forest Sanctuary style.
+  bool get _isPillFilled => _variant == _VailButtonVariant.primary;
 
   @override
   Widget build(BuildContext context) {
-    final textColor = _isEnabled ? _activeTextColor : VailTheme.textMuted;
-    final borderColor = _isEnabled ? _activeBorderColor : VailTheme.border;
-    final bgColor = _isEnabled ? _activeBgColor : Colors.transparent;
+    final textColor = _isEnabled
+        ? (_isPillFilled ? VailTheme.onPrimary : _activeTextColor)
+        : VailTheme.textMuted;
+    final borderColor = _isEnabled ? _activeBorderColor : VailTheme.ghostBorder;
+    final bgColor = _isEnabled ? _activeBgColor : VailTheme.ghostBorder;
 
     return GestureDetector(
       onTap: onTap,
@@ -85,8 +90,13 @@ class VailButton extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: bgColor,
-          border: Border.all(color: borderColor),
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+          border: _isPillFilled ? null : Border.all(color: borderColor),
+          borderRadius: BorderRadius.circular(
+            _isPillFilled ? VailTheme.radiusFull : VailTheme.radiusSm,
+          ),
+          boxShadow: (_isPillFilled && _isEnabled)
+              ? VailTheme.primaryGlow
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -97,9 +107,9 @@ class VailButton extends StatelessWidget {
             ],
             Text(
               label,
-              style: VailTheme.mono.copyWith(
+              style: VailTheme.label.copyWith(
                 color: textColor,
-                letterSpacing: 1.5,
+                fontWeight: FontWeight.w700,
               ),
             ),
             if (trailingIcon != null) ...[

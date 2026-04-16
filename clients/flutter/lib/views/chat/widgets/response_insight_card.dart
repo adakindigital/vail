@@ -116,8 +116,8 @@ class ResponseInsightCard extends StatelessWidget {
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: VailTheme.surface,
-          border: Border.all(color: VailTheme.border),
+          color: VailTheme.surfaceContainerLow,
+          border: Border.all(color: VailTheme.ghostBorder),
           borderRadius: BorderRadius.circular(VailTheme.radiusMd),
         ),
         child: Column(
@@ -146,9 +146,9 @@ class ResponseInsightCard extends StatelessWidget {
                   GestureDetector(
                     onTap: onDismiss,
                     behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: VailTheme.sm),
-                      child: const Icon(
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: VailTheme.sm),
+                      child: Icon(
                         Icons.close_rounded,
                         size: 14,
                         color: VailTheme.textMuted,

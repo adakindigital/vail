@@ -1,48 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-/// All brand design tokens live here.
-///
-/// Widgets reference these constants — never hardcode colours, font sizes,
-/// radii, or spacing inline. To retheme the entire app, update this file.
 abstract final class VailTheme {
-  // ── Colours ───────────────────────────────────────────────────────────────
+  // Colors
+  static const Color background = Color(0xFF051C10);
+  static const Color primary = Color(0xFF21C45D);
+  static const Color onPrimary = Color(0xFF051C10);
+  static const Color primaryContainer = Color(0x1A21C45D);
+  static const Color surfaceContainerLow = Color(0xFF0A2918);
+  static const Color surfaceContainer = Color(0xFF0E331F);
+  static const Color surfaceContainerHigh = Color(0xFF164028);
+  static const Color surfaceContainerHighest = Color(0xFF1E4D34);
+  static const Color ghostBorder = Color(0x0DFFFFFF);
+  static const Color onSurface = Color(0xFFF1F5F9);
+  static const Color onSurfaceVariant = Color(0xFFCBD5E1);
+  static const Color textMuted = Color(0xFF4A6355);
+  static const Color error = Color(0xFFFFB4AB);
 
-  /// Page / scaffold background — near-black.
-  static const Color background = Color(0xFF080808);
+  // Aliases for compatibility
+  static const Color accent = primary;
+  static const Color accentSubtle = primaryContainer;
+  static const Color onAccent = onPrimary;
+  static const Color border = ghostBorder;
+  static const Color borderSubtle = ghostBorder;
+  static const Color textPrimary = onSurface;
+  static const Color textSecondary = onSurfaceVariant;
+  static const Color surface = surfaceContainer;
+  static const Color surfaceInput = surfaceContainerLow;
 
-  /// Elevated surface: cards, code blocks, bottom sheet.
-  static const Color surface = Color(0xFF111111);
-
-  /// Input fields and secondary surfaces.
-  static const Color surfaceInput = Color(0xFF181818);
-
-  /// Strong border: card outlines, separators.
-  static const Color border = Color(0xFF202020);
-
-  /// Subtle border: dividers, inset lines.
-  static const Color borderSubtle = Color(0xFF161616);
-
-  /// Signature brand green — accent, active states, CTAs.
-  static const Color accent = Color(0xFF00E676);
-
-  /// Muted green tint — active chip / pill background.
-  static const Color accentSubtle = Color(0xFF00200E);
-
-  /// Text rendered on accent-coloured surfaces.
-  static const Color onAccent = Color(0xFF000000);
-
-  static const Color textPrimary = Color(0xFFF0F0F0);
-  static const Color textSecondary = Color(0xFF6A6A6A);
-  static const Color textMuted = Color(0xFF333333);
-
-  /// User message bubble background (green-tinted dark).
-  static const Color userBubble = Color(0xFF182820);
-  static const Color onUserBubble = Color(0xFFD0F5E4);
-
-  static const Color error = Color(0xFFFF4D4D);
-
-  // ── Spacing ───────────────────────────────────────────────────────────────
-
+  // Spacing
   static const double xs = 4;
   static const double sm = 8;
   static const double md = 12;
@@ -50,191 +36,50 @@ abstract final class VailTheme {
   static const double xl = 24;
   static const double xxl = 40;
 
-  // ── Radius ────────────────────────────────────────────────────────────────
+  // Radius
+  static const double radiusSm = 12.0;
+  static const double radiusMd = 16.0;
+  static const double radiusLg = 24.0;
+  static const double radiusXl = 32.0;
+  static const double radiusFull = 9999.0;
 
-  static const double radiusSm = 6;
-  static const double radiusMd = 10;
-  static const double radiusLg = 16;
+  // Shadows
+  static List<BoxShadow> primaryGlow = [
+    BoxShadow(color: primary.withValues(alpha: 0.4), blurRadius: 20),
+  ];
 
-  // ── Typography ────────────────────────────────────────────────────────────
-  // Change font family strings here to retheme typography across the whole app.
+  static List<BoxShadow> aiCardGlow = [
+    BoxShadow(color: primary.withValues(alpha: 0.15), blurRadius: 15),
+  ];
 
-  static const String _fontBody = 'SF Pro Display'; // system sans fallback
-  static const String _fontMono = 'JetBrains Mono'; // system mono fallback
+  // Typography
+  static TextStyle get display => GoogleFonts.manrope(fontSize: 30, fontWeight: FontWeight.w900, color: onSurface);
+  static TextStyle get heading => GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w800, color: onSurface);
+  static TextStyle get subheading => GoogleFonts.manrope(fontSize: 18, fontWeight: FontWeight.w600, color: onSurface);
+  static TextStyle get body => GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w400, color: onSurface);
+  static TextStyle get bodySmall => GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w400, color: onSurfaceVariant);
+  static TextStyle get label => GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.w600, color: onSurface);
+  static TextStyle get caption => GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w700, color: onSurfaceVariant, letterSpacing: 1.2);
+  static TextStyle get micro => GoogleFonts.manrope(fontSize: 9, fontWeight: FontWeight.w700, color: textMuted, letterSpacing: 1.5);
 
-  /// Massive wordmark — empty state / splash screen.
-  static const TextStyle wordmark = TextStyle(
-    fontFamily: _fontBody,
-    fontSize: 52,
-    fontWeight: FontWeight.w900,
-    letterSpacing: 14,
-    color: textPrimary,
-    height: 1,
-  );
-
-  /// Screen heading ("Settings", "Sessions").
-  static const TextStyle heading = TextStyle(
-    fontFamily: _fontBody,
-    fontSize: 26,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 0.5,
-    color: textPrimary,
-    height: 1.1,
-  );
-
-  /// All-caps section label above content groups.
-  static const TextStyle sectionLabel = TextStyle(
-    fontFamily: _fontMono,
-    fontSize: 10,
-    fontWeight: FontWeight.w600,
-    letterSpacing: 2.0,
-    color: textSecondary,
-  );
-
-  /// Top-bar brand label ("VAIL.CORE").
-  static const TextStyle brandLabel = TextStyle(
-    fontFamily: _fontMono,
-    fontSize: 12,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 2.5,
-    color: textPrimary,
-  );
-
-  /// Standard body text.
-  static const TextStyle body = TextStyle(
-    fontFamily: _fontBody,
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    color: textPrimary,
-    height: 1.55,
-  );
-
-  /// Secondary / descriptive text.
-  static const TextStyle bodySmall = TextStyle(
-    fontFamily: _fontBody,
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    color: textSecondary,
-    height: 1.4,
-  );
-
-  /// Tiny mono label — status lines, metadata, nav labels.
-  static const TextStyle mono = TextStyle(
-    fontFamily: _fontMono,
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
-    letterSpacing: 1.5,
-    color: textSecondary,
-  );
-
-  /// Session list item title.
-  static const TextStyle sessionTitle = TextStyle(
-    fontFamily: _fontBody,
-    fontSize: 15,
-    fontWeight: FontWeight.w600,
-    color: textPrimary,
-  );
-
-  // ── Syntax highlight theme ────────────────────────────────────────────────
-  //
-  // Used by flutter_highlight's HighlightView. The 'root' entry MUST set
-  // backgroundColor — HighlightView falls back to pure white otherwise.
-  // All other keys map to highlight.js token class names.
+  // Typography Aliases
+  static TextStyle get mono => micro;
+  static TextStyle get sectionLabel => caption;
+  static TextStyle get brandLabel => label;
+  static TextStyle get sessionTitle => label.copyWith(fontSize: 14, fontWeight: FontWeight.w600);
+  static TextStyle get inlineCode => GoogleFonts.jetBrainsMono(fontSize: 13, color: primary, backgroundColor: primaryContainer);
 
   static const Map<String, TextStyle> codeTheme = {
-    // Root container — background must match surface so the code block
-    // Container provides the actual background, not HighlightView.
-    'root': TextStyle(
-      color: textPrimary,
-      backgroundColor: background,
-    ),
-
-    // ── Structural ──────────────────────────────────────────────────────────
-    'keyword': TextStyle(color: accent, fontWeight: FontWeight.w600),
-    'built_in': TextStyle(color: accent),
-    'type': TextStyle(color: Color(0xFFE5C07B)),
-    'class': TextStyle(color: Color(0xFFE5C07B), fontWeight: FontWeight.w600),
-    'function': TextStyle(color: Color(0xFF61AFEF)),
-    'title': TextStyle(color: Color(0xFF61AFEF), fontWeight: FontWeight.w600),
-
-    // ── Values ───────────────────────────────────────────────────────────────
+    'root': TextStyle(color: Color(0xFFF1F5F9), backgroundColor: Color(0xFF031109)),
+    'keyword': TextStyle(color: Color(0xFF21C45D), fontWeight: FontWeight.w600),
     'string': TextStyle(color: Color(0xFFE5C07B)),
-    'number': TextStyle(color: Color(0xFFD19A66)),
-    'literal': TextStyle(color: Color(0xFFD19A66)),
-    'boolean': TextStyle(color: Color(0xFFD19A66)),
-    'regexp': TextStyle(color: Color(0xFFD19A66)),
-
-    // ── Markup / meta ────────────────────────────────────────────────────────
-    'tag': TextStyle(color: Color(0xFFE06C75)),
-    'attr': TextStyle(color: Color(0xFFE5C07B)),
-    'attribute': TextStyle(color: Color(0xFFE5C07B)),
-    'name': TextStyle(color: Color(0xFFE06C75)),
-    'selector-tag': TextStyle(color: accent),
-    'selector-class': TextStyle(color: Color(0xFFE5C07B)),
-    'selector-id': TextStyle(color: Color(0xFF61AFEF)),
-
-    // ── Comments & docs ──────────────────────────────────────────────────────
-    'comment': TextStyle(
-      color: Color(0xFF4A4A4A),
-      fontStyle: FontStyle.italic,
-    ),
-    'quote': TextStyle(
-      color: Color(0xFF4A4A4A),
-      fontStyle: FontStyle.italic,
-    ),
-    'doctag': TextStyle(color: Color(0xFF4A4A4A)),
-
-    // ── Variables & params ───────────────────────────────────────────────────
-    'variable': TextStyle(color: Color(0xFFE06C75)),
-    'template-variable': TextStyle(color: Color(0xFFE06C75)),
-    'params': TextStyle(color: textPrimary),
-
-    // ── Operators & punctuation ───────────────────────────────────────────────
-    'operator': TextStyle(color: Color(0xFF56B6C2)),
-    'symbol': TextStyle(color: Color(0xFF56B6C2)),
-    'bullet': TextStyle(color: accent),
-    'meta': TextStyle(color: Color(0xFF56B6C2)),
-    'meta-keyword': TextStyle(color: accent, fontWeight: FontWeight.w600),
-
-    // ── Emphasis ─────────────────────────────────────────────────────────────
-    'emphasis': TextStyle(fontStyle: FontStyle.italic),
-    'strong': TextStyle(fontWeight: FontWeight.w700),
-    'deletion': TextStyle(color: Color(0xFFE06C75)),
-    'addition': TextStyle(color: accent),
-    'link': TextStyle(
-      color: Color(0xFF61AFEF),
-      decoration: TextDecoration.underline,
-    ),
+    'comment': TextStyle(color: Color(0xFF4A6355), fontStyle: FontStyle.italic),
   };
 
-  // ── Material ThemeData ────────────────────────────────────────────────────
-
-  /// Builds a [ThemeData] consistent with the Vail brand tokens above.
-  /// Called once from [VailApp] — never used directly in widgets.
   static ThemeData materialTheme() => ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: background,
-        colorScheme: const ColorScheme.dark(
-          primary: accent,
-          onPrimary: onAccent,
-          secondary: accent,
-          onSecondary: onAccent,
-          surface: surface,
-          onSurface: textPrimary,
-          onSurfaceVariant: textSecondary,
-          outline: border,
-          outlineVariant: borderSubtle,
-          error: error,
-        ),
-        dividerTheme: const DividerThemeData(
-          color: border,
-          thickness: 1,
-          space: 1,
-        ),
-        iconTheme: const IconThemeData(
-          color: textSecondary,
-          size: 20,
-        ),
+        colorScheme: const ColorScheme.dark(primary: primary, onPrimary: onPrimary, surface: surfaceContainer, onSurface: onSurface),
       );
 }

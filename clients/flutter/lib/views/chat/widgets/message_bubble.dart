@@ -1,354 +1,280 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:vail_app/core/constants/app_constants.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 import 'package:vail_app/core/widgets/vail_dialog.dart';
+import 'package:vail_app/data/models/api/chat/ui_component.dart';
 import 'package:vail_app/data/models/domain/conversation_message.dart';
+import 'package:vail_app/views/chat/chat_viewmodel.dart';
 import 'package:vail_app/views/chat/widgets/code_block.dart';
+import 'package:vail_app/views/chat/widgets/dynamic_component_renderer.dart';
+import 'package:vail_app/views/documents/new_document_sheet.dart';
 
-/// Terminal-style message block.
-///
-/// Both user and assistant messages render as full-width bordered blocks
-/// with a header row showing the sender label and status — matching the
-/// PRECISION_TERMINAL design language.
 class MessageBubble extends StatelessWidget {
   final ConversationMessage message;
-
-  /// Zero-based position in the messages list. Used to generate INPUT_XXXX IDs.
   final int index;
-
-  const MessageBubble({
-    required this.message,
-    required this.index,
-    super.key,
-  });
+  const MessageBubble({required this.message, required this.index, super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: VailTheme.lg,
-        vertical: VailTheme.xs + 1,
-      ),
-      decoration: BoxDecoration(
-        color: message.isFromUser ? VailTheme.userBubble : VailTheme.surface,
-        border: Border.all(
-          color: message.isFromUser
-              ? VailTheme.accent.withValues(alpha: 0.15)
-              : VailTheme.border,
-        ),
-        borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _MessageHeader(message: message, index: index),
-          const Divider(height: 1, thickness: 1, color: VailTheme.border),
-          _MessageContent(message: message),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Header row ────────────────────────────────────────────────────────────────
-
-class _MessageHeader extends StatelessWidget {
-  final ConversationMessage message;
-  final int index;
-
-  const _MessageHeader({required this.message, required this.index});
-
-  String get _inputId => 'INPUT_${(index + 1).toString().padLeft(4, '0')}';
-
-  String get _assistantStatus {
-    if (message.isStreaming && message.content.isEmpty) return 'PROCESSING';
-    if (message.isStreaming) return 'STREAMING';
-    return 'COMPLETE';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (message.isFromUser) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.md,
-          vertical: VailTheme.sm - 1,
-        ),
-        child: Row(
-          children: [
-            Text(
-              'USER',
-              style: VailTheme.mono.copyWith(
-                fontSize: 8,
-                color: VailTheme.textSecondary,
-                letterSpacing: 1.5,
-              ),
-            ),
-            Text(
-              ' // $_inputId',
-              style: VailTheme.mono.copyWith(
-                fontSize: 8,
-                color: VailTheme.textMuted,
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Assistant
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.md,
-        vertical: VailTheme.sm - 1,
-      ),
-      child: Row(
-        children: [
-          Text(
-            'VAIL_ASSISTANT',
-            style: VailTheme.mono.copyWith(
-              fontSize: 8,
-              color: VailTheme.accent,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(width: VailTheme.sm),
-          _StatusBadge(status: _assistantStatus),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg, vertical: VailTheme.xs + 2),
+      child: message.isFromUser ? _UserBubble(message: message) : _AssistantBubble(message: message),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String status;
-
-  const _StatusBadge({required this.status});
-
-  Color get _color {
-    switch (status) {
-      case 'COMPLETE':
-        return VailTheme.accent;
-      case 'STREAMING':
-        return const Color(0xFFE5C07B);
-      case 'PROCESSING':
-        return VailTheme.textSecondary;
-      default:
-        return VailTheme.textMuted;
-    }
-  }
+class _UserBubble extends StatelessWidget {
+  final ConversationMessage message;
+  const _UserBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.sm, vertical: 1),
-      decoration: BoxDecoration(
-        border: Border.all(color: _color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (status == 'STREAMING' || status == 'PROCESSING')
-            Padding(
-              padding: const EdgeInsets.only(right: 3),
-              child: SizedBox(
-                width: 5,
-                height: 5,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1,
-                  color: _color,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Flexible(
+          child: message.formContext != null
+              ? _FormContextCard(formContext: message.formContext!)
+              : Container(
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+                  padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg + 4, vertical: VailTheme.md + 2),
+                  decoration: BoxDecoration(
+                    color: VailTheme.surfaceContainerHigh,
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(VailTheme.radiusLg), topRight: Radius.circular(VailTheme.radiusLg), bottomLeft: Radius.circular(VailTheme.radiusLg), bottomRight: Radius.circular(VailTheme.radiusSm)),
+                    border: Border.all(color: VailTheme.ghostBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (message.imageBytes != null) Padding(padding: const EdgeInsets.only(bottom: VailTheme.sm), child: _AttachedImage(bytes: message.imageBytes!)),
+                      SelectableText(message.content, style: VailTheme.body),
+                    ],
+                  ),
                 ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Styled card that replaces the raw form-submission text bubble.
+/// Shows each field the user filled in as a label → value row.
+/// An empty [formContext] map renders as a "Skipped" card with no rows.
+class _FormContextCard extends StatelessWidget {
+  final Map<String, String> formContext;
+  const _FormContextCard({required this.formContext});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = formContext.entries.where((e) => e.value.trim().isNotEmpty).toList();
+    return Container(
+      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.md + 2, vertical: VailTheme.sm + 2),
+      decoration: BoxDecoration(
+        color: VailTheme.primaryContainer.withValues(alpha: 0.08),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(VailTheme.radiusLg),
+          topRight: Radius.circular(VailTheme.radiusLg),
+          bottomLeft: Radius.circular(VailTheme.radiusLg),
+          bottomRight: Radius.circular(VailTheme.radiusSm),
+        ),
+        border: Border.all(color: VailTheme.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle_outline_rounded, size: 11, color: VailTheme.primary),
+              const SizedBox(width: 4),
+              Text(
+                entries.isEmpty ? 'SKIPPED' : 'CONTEXT PROVIDED',
+                style: VailTheme.micro.copyWith(color: VailTheme.primary, letterSpacing: 1.2),
               ),
-            ),
-          Text(
-            status,
-            style: VailTheme.mono.copyWith(
-              fontSize: 7,
-              color: _color,
-              letterSpacing: 1,
-            ),
+            ],
           ),
+          if (entries.isNotEmpty) ...[
+            const SizedBox(height: VailTheme.xs + 1),
+            ...entries.map((e) => Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${e.key}  ', style: VailTheme.caption.copyWith(color: VailTheme.textMuted, fontSize: 10)),
+                  Flexible(child: Text(e.value, style: VailTheme.caption.copyWith(fontSize: 10))),
+                ],
+              ),
+            )),
+          ],
         ],
       ),
     );
   }
 }
 
-// ── Message content ───────────────────────────────────────────────────────────
-
-class _MessageContent extends StatelessWidget {
+class _AssistantBubble extends StatelessWidget {
   final ConversationMessage message;
-
-  const _MessageContent({required this.message});
+  const _AssistantBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {
-    if (message.isFromUser) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(
-          VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(color: VailTheme.primaryContainer, shape: BoxShape.circle, border: Border.all(color: VailTheme.primary.withValues(alpha: 0.2))),
+          child: const Icon(Icons.eco_rounded, color: VailTheme.primary, size: 16),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (message.imageBytes != null) ...[
-              _AttachedImage(bytes: message.imageBytes!),
-              const SizedBox(height: VailTheme.sm),
+        const SizedBox(width: VailTheme.sm),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(left: 4, bottom: VailTheme.xs), child: Text(AppConstants.modelDisplayName(message.model ?? 'vail'), style: VailTheme.caption.copyWith(color: VailTheme.primary))),
+              Container(
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
+                padding: const EdgeInsets.all(VailTheme.lg),
+                decoration: BoxDecoration(
+                  color: VailTheme.surfaceContainer,
+                  borderRadius: const BorderRadius.only(topLeft: Radius.circular(VailTheme.radiusSm), topRight: Radius.circular(VailTheme.radiusLg), bottomLeft: Radius.circular(VailTheme.radiusLg), bottomRight: Radius.circular(VailTheme.radiusLg)),
+                  border: Border.all(color: VailTheme.primary.withValues(alpha: 0.2)),
+                  boxShadow: VailTheme.aiCardGlow,
+                ),
+                child: _AssistantContent(message: message),
+              ),
             ],
-            SelectableText(
-              message.content,
-              style: VailTheme.body.copyWith(color: VailTheme.onUserBubble),
-            ),
-          ],
+          ),
         ),
-      );
-    }
+      ],
+    );
+  }
+}
 
-    // Assistant — typing indicator or markdown
-    if (message.isStreaming && message.content.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(
-          VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
-        ),
-        child: _TypingIndicator(),
-      );
-    }
+class _AssistantContent extends StatelessWidget {
+  final ConversationMessage message;
+  const _AssistantContent({required this.message});
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        VailTheme.md, VailTheme.sm, VailTheme.md, VailTheme.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+  @override
+  Widget build(BuildContext context) {
+    if (message.isStreaming && message.content.isEmpty) return const _TypingIndicator();
+    // Guard: if the stream completed with no text content but UI components
+    // are present, skip the empty MarkdownBody. If there are no components
+    // either, show a fallback so the bubble is never silently blank.
+    final hasContent = message.content.trim().isNotEmpty;
+    final hasComponents = message.uiComponents.isNotEmpty;
+    if (!hasContent && !hasComponents) {
+      return Text('—', style: VailTheme.bodySmall.copyWith(color: VailTheme.textMuted));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hasContent)
           MarkdownBody(
             data: message.content,
             selectable: !message.isStreaming,
-            styleSheet: _markdownStyles(),
+            styleSheet: _markdownStyles(context),
             builders: {'code': _CodeElementBuilder()},
             onTapLink: (text, href, title) {
-              if (href == null) return;
-              final uri = Uri.tryParse(href);
-              if (uri != null) _confirmExternalLink(context, uri);
+              if (href != null) _confirmExternalLink(context, Uri.tryParse(href));
             },
           ),
-          if (message.isStreaming) ...[
-            const SizedBox(height: VailTheme.sm),
-            const SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(
-                  strokeWidth: 1.5, color: VailTheme.accent),
-            ),
-          ],
+        if (message.uiComponents.isNotEmpty)
+          ...message.uiComponents.map((u) => DynamicComponentRenderer(
+            component: u,
+            isSubmitted: message.formSubmitted,
+            onAction: (payload, formData) =>
+                _handleComponentAction(context, payload, formData, u, message),
+          )),
+        if (message.isStreaming) ...[
+          const SizedBox(height: VailTheme.sm),
+          const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: VailTheme.primary)),
         ],
-      ),
-    );
-  }
-
-  Future<void> _confirmExternalLink(BuildContext context, Uri uri) async {
-    final display = uri.toString().length > 60
-        ? '${uri.toString().substring(0, 57)}...'
-        : uri.toString();
-
-    final confirmed = await showVailDialog<bool>(
-      context: context,
-      title: 'EXTERNAL LINK',
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'You are about to leave Vail and open an external website.',
-            style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
-          ),
-          const SizedBox(height: VailTheme.md),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(VailTheme.md),
-            decoration: BoxDecoration(
-              color: VailTheme.background,
-              border: Border.all(color: VailTheme.border),
-              borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-            ),
-            child: Text(
-              display,
-              style: VailTheme.mono.copyWith(
-                color: VailTheme.accent,
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-      actions: const [
-        VailDialogAction(label: 'CANCEL', value: false),
-        VailDialogAction(label: 'PROCEED', value: true, isPrimary: true),
       ],
     );
-
-    if (confirmed == true) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
-  MarkdownStyleSheet _markdownStyles() {
+  void _handleComponentAction(
+    BuildContext context,
+    String payload,
+    Map<String, String> formData,
+    UIComponent component,
+    ConversationMessage message,
+  ) {
+    final vm = context.read<ChatViewModel>();
+
+    if (payload == 'open_doc_writer') {
+      vm.markFormSubmitted();
+      showNewDocumentSheet(context, initialPrompt: message.content);
+      return;
+    }
+
+    // Build a label→value map for the summary card shown in place of the
+    // raw context message. Only include fields the user actually filled in.
+    final contextCard = {
+      for (final field in component.inputFields)
+        if (formData[field.key]?.trim().isNotEmpty == true)
+          field.label: formData[field.key]!.trim(),
+    };
+
+    final text = _buildContextMessage(payload, formData, component.inputFields);
+    vm.markFormSubmitted();
+    vm.sendMessage(text, formContext: contextCard.isEmpty ? {} : contextCard);
+  }
+
+  String _buildContextMessage(
+    String payload,
+    Map<String, String> formData,
+    List<UIField> fields,
+  ) {
+    // This instruction is appended to every form submission so the model
+    // produces the final output immediately and does not loop back with
+    // another form or further clarifying questions.
+    const noLoop = ' Please respond with the final output now. Do not ask for more information.';
+
+    final filledFields = fields
+        .where((f) => formData[f.key]?.trim().isNotEmpty == true)
+        .toList();
+    if (filledFields.isEmpty) {
+      // Skip or no data filled — just proceed with a direct instruction.
+      return '$payload$noLoop';
+    }
+    final parts =
+        filledFields.map((f) => '${f.label}: ${formData[f.key]!.trim()}').join(' | ');
+    return 'Context — $parts\n\n$payload$noLoop';
+  }
+
+  void _confirmExternalLink(BuildContext context, Uri? uri) async {
+    if (uri == null) return;
+    final confirmed = await showVailDialog<bool>(
+      context: context,
+      title: 'External Link',
+      body: Text('Open ${uri.toString()} in your browser?', style: VailTheme.bodySmall),
+      actions: const [
+        VailDialogAction(label: 'Cancel', value: false),
+        VailDialogAction(label: 'Open', value: true, isPrimary: true),
+      ],
+    );
+    if (confirmed == true) launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  MarkdownStyleSheet _markdownStyles(BuildContext context) {
     return MarkdownStyleSheet(
       p: VailTheme.body,
       strong: VailTheme.body.copyWith(fontWeight: FontWeight.w700),
-      em: VailTheme.body.copyWith(fontStyle: FontStyle.italic),
-      h1: VailTheme.heading,
-      h2: VailTheme.heading.copyWith(fontSize: 20),
-      h3: VailTheme.body.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
-      h4: VailTheme.body.copyWith(fontWeight: FontWeight.w600),
-      h5: VailTheme.body.copyWith(fontWeight: FontWeight.w600, color: VailTheme.textSecondary),
-      h6: VailTheme.bodySmall.copyWith(fontWeight: FontWeight.w600),
-      code: const TextStyle(
-        fontFamily: 'JetBrains Mono',
-        fontSize: 12,
-        color: VailTheme.accent,
-        backgroundColor: VailTheme.accentSubtle,
-      ),
-      codeblockDecoration: BoxDecoration(
-        color: VailTheme.background,
-        border: Border.all(color: VailTheme.border),
-        borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-      ),
+      code: VailTheme.inlineCode,
+      codeblockDecoration: BoxDecoration(color: const Color(0xFF031109), border: Border.all(color: VailTheme.ghostBorder), borderRadius: BorderRadius.circular(VailTheme.radiusSm)),
       codeblockPadding: const EdgeInsets.all(VailTheme.md),
-      blockquotePadding: const EdgeInsets.only(left: VailTheme.md, top: VailTheme.xs, bottom: VailTheme.xs),
-      blockquoteDecoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: VailTheme.accent.withValues(alpha: 0.5), width: 2),
-        ),
-      ),
-      listBullet: VailTheme.body.copyWith(color: VailTheme.accent),
-      listIndent: 20,
-      tableHead: VailTheme.body.copyWith(fontWeight: FontWeight.w700),
-      tableBody: VailTheme.bodySmall,
-      tableCellsPadding: const EdgeInsets.symmetric(horizontal: VailTheme.md, vertical: VailTheme.sm),
-      tableBorder: TableBorder.all(color: VailTheme.border, width: 1,
-          borderRadius: BorderRadius.circular(VailTheme.radiusSm)),
-      tableColumnWidth: const FlexColumnWidth(),
-      a: VailTheme.body.copyWith(
-        color: VailTheme.accent,
-        decoration: TextDecoration.underline,
-        decorationColor: VailTheme.accent.withValues(alpha: 0.5),
-      ),
-      horizontalRuleDecoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
-      ),
+      blockquoteDecoration: BoxDecoration(border: Border(left: BorderSide(color: VailTheme.primary.withValues(alpha: 0.4), width: 3)), color: VailTheme.primaryContainer),
+      listBullet: VailTheme.body.copyWith(color: VailTheme.primary),
     );
   }
 }
-
-// ── Code block element builder ────────────────────────────────────────────────
 
 class _CodeElementBuilder extends MarkdownElementBuilder {
   @override
@@ -356,67 +282,27 @@ class _CodeElementBuilder extends MarkdownElementBuilder {
     final code = element.textContent;
     final rawClass = element.attributes['class'] ?? '';
     final lang = rawClass.replaceAll('language-', '').trim();
-
-    final isBlock = lang.isNotEmpty || code.contains('\n');
-    if (!isBlock) return null;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: VailTheme.xs),
-      child: CodeBlock(
-        code: code.trimRight(),
-        language: lang.isEmpty ? null : lang,
-      ),
-    );
+    if (lang.isEmpty && !code.contains('\n')) return null;
+    return Padding(padding: const EdgeInsets.symmetric(vertical: VailTheme.xs), child: CodeBlock(code: code.trimRight(), language: lang.isEmpty ? null : lang));
   }
 }
-
-// ── Attached image ────────────────────────────────────────────────────────────
 
 class _AttachedImage extends StatelessWidget {
   final Uint8List bytes;
-
   const _AttachedImage({required this.bytes});
-
   @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 260, maxHeight: 200),
-        child: Image.memory(bytes, fit: BoxFit.cover),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ClipRRect(borderRadius: BorderRadius.circular(VailTheme.radiusSm), child: Image.memory(bytes, fit: BoxFit.cover, width: 280));
 }
-
-// ── Typing indicator ──────────────────────────────────────────────────────────
 
 class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
-
   @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 20,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Dot(delay: Duration.zero),
-          SizedBox(width: 4),
-          _Dot(delay: Duration(milliseconds: 160)),
-          SizedBox(width: 4),
-          _Dot(delay: Duration(milliseconds: 320)),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const Row(mainAxisSize: MainAxisSize.min, children: [_Dot(delay: Duration.zero), SizedBox(width: 5), _Dot(delay: Duration(milliseconds: 160)), SizedBox(width: 5), _Dot(delay: Duration(milliseconds: 320))]);
 }
 
 class _Dot extends StatefulWidget {
   final Duration delay;
-
   const _Dot({required this.delay});
-
   @override
   State<_Dot> createState() => _DotState();
 }
@@ -424,36 +310,15 @@ class _Dot extends StatefulWidget {
 class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _opacity;
-
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-        duration: const Duration(milliseconds: 600), vsync: this);
+    _ctrl = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
     _opacity = Tween<double>(begin: 0.2, end: 1.0).animate(_ctrl);
-    Future.delayed(widget.delay, () {
-      if (mounted) _ctrl.repeat(reverse: true);
-    });
+    Future.delayed(widget.delay, () { if (mounted) _ctrl.repeat(reverse: true); });
   }
-
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
+  void dispose() { _ctrl.dispose(); super.dispose(); }
   @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _opacity,
-      child: Container(
-        width: 4,
-        height: 4,
-        decoration: const BoxDecoration(
-          color: VailTheme.accent,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => FadeTransition(opacity: _opacity, child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: VailTheme.primary, shape: BoxShape.circle)));
 }
