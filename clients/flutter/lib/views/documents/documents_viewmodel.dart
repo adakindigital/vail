@@ -66,7 +66,7 @@ class DocumentsViewModel extends ChangeNotifier {
           maxTokens: 8192,
         ),
       )) {
-        buffer.write(token);
+        buffer.write(token.content);
         _streamingContent = buffer.toString();
         notifyListeners();
       }

@@ -44,17 +44,19 @@ class _AppShellState extends State<AppShell> {
       ],
       child: Builder(
         builder: (context) {
+          // Alignment with design order (Mobile): HOME, DOCS, HISTORY, PROFILE
           final stack = IndexedStack(
             index: _activeIndex,
             children: [
               ChatView(onSwitchTab: _switchTo),
-              SessionsView(onSwitchTab: _switchTo),
               const DocumentsView(),
+              SessionsView(onSwitchTab: _switchTo),
               const SettingsView(),
             ],
           );
 
           if (Responsive.isDesktop(context)) {
+            // Desktop handles its own mapping to these indices
             return DesktopShell(
               activeIndex: _activeIndex,
               onSwitch: _switchTo,
@@ -72,8 +74,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 }
-
-// ── Mobile shell ──────────────────────────────────────────────────────────────
 
 class _MobileShell extends StatelessWidget {
   final int activeIndex;
@@ -100,8 +100,6 @@ class _MobileShell extends StatelessWidget {
   }
 }
 
-// ── Forest Sanctuary bottom nav ───────────────────────────────────────────────
-
 class _ForestBottomNav extends StatelessWidget {
   final int activeIndex;
   final void Function(int) onTap;
@@ -115,22 +113,22 @@ class _ForestBottomNav extends StatelessWidget {
     (
       icon: Icons.chat_bubble_outline_rounded,
       activeIcon: Icons.chat_bubble_rounded,
-      label: 'Chat',
-    ),
-    (
-      icon: Icons.history_rounded,
-      activeIcon: Icons.history_rounded,
-      label: 'History',
+      label: 'HOME',
     ),
     (
       icon: Icons.description_outlined,
       activeIcon: Icons.description_rounded,
-      label: 'Docs',
+      label: 'DOCS',
+    ),
+    (
+      icon: Icons.history_rounded,
+      activeIcon: Icons.history_rounded,
+      label: 'HISTORY',
     ),
     (
       icon: Icons.person_outline_rounded,
       activeIcon: Icons.person_rounded,
-      label: 'Profile',
+      label: 'PROFILE',
     ),
   ];
 
@@ -143,17 +141,10 @@ class _ForestBottomNav extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
-            color: VailTheme.background.withValues(alpha: 0.95),
+            color: VailTheme.background.withValues(alpha: 0.92),
             border: const Border(
               top: BorderSide(color: VailTheme.ghostBorder),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: VailTheme.primary.withValues(alpha: 0.08),
-                blurRadius: 20,
-                offset: const Offset(0, -4),
-              ),
-            ],
           ),
           padding: EdgeInsets.only(
             top: VailTheme.sm,
@@ -199,41 +190,36 @@ class _NavItem extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(
-          vertical: VailTheme.xs + 1,
-          horizontal: VailTheme.md,
-        ),
-        decoration: isActive
-            ? BoxDecoration(
-                color: VailTheme.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
-              )
-            : null,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+            decoration: isActive ? BoxDecoration(
+              color: VailTheme.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+            ) : null,
+            child: Icon(
               isActive ? activeIcon : icon,
               color: isActive
                   ? VailTheme.primary
                   : VailTheme.onSurfaceVariant.withValues(alpha: 0.4),
-              size: 22,
+              size: 20,
             ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: VailTheme.caption.copyWith(
-                color: isActive
-                    ? VailTheme.primary
-                    : VailTheme.onSurfaceVariant.withValues(alpha: 0.4),
-                fontSize: 9,
-                letterSpacing: 0.8,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: VailTheme.caption.copyWith(
+              color: isActive
+                  ? VailTheme.primary
+                  : VailTheme.onSurfaceVariant.withValues(alpha: 0.4),
+              fontSize: 9,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              letterSpacing: 1.0,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -1,20 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 
-/// Forest Sanctuary upgrade paywall — shown when a user selects a Pro/Max tier
+/// Vail upgrade paywall — shown when a user selects a Pro/Max tier
 /// or taps the Upgrade Plan button in the sidebar.
-Future<void> showUpgradeSheet(BuildContext context) {
+///
+/// [onProActivated] is called immediately when the user taps the upgrade
+/// button. The caller is responsible for persisting the pro state and
+/// rebuilding affected views.
+///
+// TODO(prod): remove [onProActivated] bypass — replace with PayFast payment
+//             confirmation callback. Pro flag must be set server-side after
+//             successful payment, not client-side.
+Future<void> showUpgradeSheet(
+  BuildContext context, {
+  VoidCallback? onProActivated,
+}) {
   return showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.75),
-    builder: (_) => const _UpgradeDialog(),
+    builder: (_) => _UpgradeDialog(onProActivated: onProActivated),
   );
 }
 
 // ── Dialog ────────────────────────────────────────────────────────────────────
 
 class _UpgradeDialog extends StatelessWidget {
-  const _UpgradeDialog();
+  // TODO(prod): remove — dev-only bypass (see showUpgradeSheet comment)
+  final VoidCallback? onProActivated;
+
+  const _UpgradeDialog({this.onProActivated});
 
   @override
   Widget build(BuildContext context) {
@@ -41,13 +55,13 @@ class _UpgradeDialog extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(VailTheme.radiusXl),
             child: SingleChildScrollView(
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _UpgradeHeader(),
-                  _PlanCard(),
-                  _FeatureList(),
-                  _UpgradeFooter(),
+                  const _UpgradeHeader(),
+                  const _PlanCard(),
+                  const _FeatureList(),
+                  _UpgradeFooter(onProActivated: onProActivated),
                 ],
               ),
             ),
@@ -346,7 +360,10 @@ class _FeatureRow extends StatelessWidget {
 // ── Footer + CTA ──────────────────────────────────────────────────────────────
 
 class _UpgradeFooter extends StatelessWidget {
-  const _UpgradeFooter();
+  // TODO(prod): remove — dev-only bypass (see showUpgradeSheet comment)
+  final VoidCallback? onProActivated;
+
+  const _UpgradeFooter({this.onProActivated});
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +373,9 @@ class _UpgradeFooter extends StatelessWidget {
         children: [
           GestureDetector(
             onTap: () {
-              // TODO: PayFast payment flow
+              // TODO(prod): replace with PayFast payment confirmation.
+              //             For now this immediately grants pro access — dev bypass only.
+              onProActivated?.call();
               Navigator.of(context).pop();
             },
             child: Container(

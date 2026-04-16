@@ -11,12 +11,10 @@ import 'package:vail_app/core/theme/vail_theme.dart';
 class ChatInput extends StatefulWidget {
   final bool enabled;
   final void Function(String input, {Uint8List? imageBytes}) onSend;
-  final VoidCallback? onNewDocument;
 
   const ChatInput({
     required this.enabled,
     required this.onSend,
-    this.onNewDocument,
     super.key,
   });
 
@@ -134,11 +132,6 @@ class _ChatInputState extends State<ChatInput> {
                   active: _pendingImage != null,
                   onTap: _pickImage,
                 ),
-                if (widget.onNewDocument != null)
-                  _PillIconButton(
-                    icon: Icons.description_outlined,
-                    onTap: widget.onNewDocument!,
-                  ),
                 // Text field
                 Expanded(
                   child: TextField(

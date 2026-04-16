@@ -3,16 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 
-/// Syntax-highlighted, horizontally scrollable code block with a header
-/// showing the language name and a copy-to-clipboard button.
-///
-/// Used as a replacement for flutter_markdown's default code block rendering.
-/// Drop-in via [_CodeElementBuilder] in message_bubble.dart.
+/// Syntax-highlighted code block with Mac-style window controls
+/// and a high-fidelity language header.
 class CodeBlock extends StatefulWidget {
   final String code;
-
-  /// highlight.js language identifier e.g. 'dart', 'python', 'bash'.
-  /// Pass null for unspecified / plain text.
   final String? language;
 
   const CodeBlock({
@@ -28,11 +22,6 @@ class CodeBlock extends StatefulWidget {
 class _CodeBlockState extends State<CodeBlock> {
   bool _copied = false;
 
-  // VailTheme.codeTheme is the single source of truth for syntax colours.
-  // The 'root' entry sets backgroundColor: VailTheme.background so
-  // HighlightView never falls back to its default white background.
-
-  /// Common shorthand aliases → highlight.js IDs.
   static const _aliases = {
     'js': 'javascript',
     'ts': 'typescript',
@@ -63,10 +52,18 @@ class _CodeBlockState extends State<CodeBlock> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: const Color(0xFF031109), // surfaceContainerLowest
         border: Border.all(color: VailTheme.ghostBorder),
-        borderRadius: BorderRadius.circular(VailTheme.radiusSm),
+        borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -88,8 +85,6 @@ class _CodeBlockState extends State<CodeBlock> {
   }
 }
 
-// ── Header ────────────────────────────────────────────────────────────────────
-
 class _CodeHeader extends StatelessWidget {
   final String language;
   final bool copied;
@@ -104,47 +99,44 @@ class _CodeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.only(
-        left: VailTheme.md,
-        right: VailTheme.sm,
-        top: VailTheme.xs + 2,
-        bottom: VailTheme.xs + 2,
+      padding: const EdgeInsets.symmetric(
+        horizontal: VailTheme.md,
+        vertical: VailTheme.sm + 2,
       ),
       decoration: const BoxDecoration(
-        color: Color(0xFF0A2918), // surfaceContainerLow
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(VailTheme.radiusSm - 1),
-          topRight: Radius.circular(VailTheme.radiusSm - 1),
-        ),
+        color: Color(0xFF031109),
         border: Border(bottom: BorderSide(color: VailTheme.ghostBorder)),
       ),
       child: Row(
         children: [
-          Text(
-            language == 'plaintext' ? 'code' : language.toLowerCase(),
-            style: VailTheme.caption.copyWith(
-              fontSize: 10,
-              color: VailTheme.primary.withValues(alpha: 0.7),
-              letterSpacing: 0.5,
-            ),
+          // Mac-style dots
+          const Row(
+            children: [
+              _Dot(color: Color(0xFFFF5F56)),
+              SizedBox(width: 6),
+              _Dot(color: Color(0xFFFFBD2E)),
+              SizedBox(width: 6),
+              _Dot(color: Color(0xFF27C93F)),
+            ],
           ),
           const Spacer(),
+          Text(
+            language.toUpperCase(),
+            style: VailTheme.micro.copyWith(
+              color: VailTheme.textMuted,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(width: VailTheme.md),
           GestureDetector(
             onTap: onCopy,
             behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.all(VailTheme.sm),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  copied ? Icons.check_rounded : Icons.copy_outlined,
-                  key: ValueKey(copied),
-                  size: 14,
-                  color: copied
-                      ? VailTheme.primary
-                      : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
-                ),
-              ),
+            child: Icon(
+              copied ? Icons.check_rounded : Icons.copy_outlined,
+              size: 14,
+              color: copied
+                  ? VailTheme.primary
+                  : VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -153,7 +145,19 @@ class _CodeHeader extends StatelessWidget {
   }
 }
 
-// ── Body ──────────────────────────────────────────────────────────────────────
+class _Dot extends StatelessWidget {
+  final Color color;
+  const _Dot({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
 
 class _CodeBody extends StatelessWidget {
   final String code;
@@ -168,21 +172,17 @@ class _CodeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // IntrinsicHeight anchors the code block's vertical size independently
-    // of any ancestor SelectableRegion. Without this, the horizontal
-    // SingleChildScrollView can report zero height when embedded inside
-    // flutter_markdown's SelectableRegion, clipping all content below.
     return IntrinsicHeight(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.all(VailTheme.md),
+        padding: const EdgeInsets.all(VailTheme.lg),
         child: HighlightView(
           code,
           language: language == 'plaintext' ? '' : language,
           theme: theme,
           textStyle: const TextStyle(
-            fontFamily: 'JetBrains Mono',
-            fontSize: 12,
+            fontFamily: 'monospace',
+            fontSize: 13,
             height: 1.6,
           ),
         ),

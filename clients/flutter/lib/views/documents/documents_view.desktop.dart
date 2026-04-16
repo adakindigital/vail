@@ -2,30 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
 import 'package:vail_app/data/models/domain/vail_document.dart';
+import 'package:vail_app/views/chat/chat_viewmodel.dart';
 import 'package:vail_app/views/documents/document_editor_view.dart';
 import 'package:vail_app/views/documents/documents_viewmodel.dart';
 import 'package:vail_app/views/documents/new_document_sheet.dart';
+import 'package:vail_app/views/documents/widgets/docs_empty_state.dart';
+import 'package:vail_app/views/settings/settings_viewmodel.dart';
+import 'package:vail_app/views/upgrade/upgrade_sheet.dart';
 
-/// Desktop documents UI — full-width list without status-bar padding.
-/// No header; the desktop shell's top bar provides context.
-///
-/// Rendered by [DocumentsView] via [ScreenTypeLayout.builder].
-/// Do not use directly — always go through [DocumentsView].
 class DocumentsViewDesktop extends StatelessWidget {
   const DocumentsViewDesktop({super.key});
+
+  void _openNewDoc(BuildContext context) {
+    if (!context.read<ChatViewModel>().isPro) {
+      showUpgradeSheet(
+        context,
+        onProActivated: () {
+          context.read<SettingsViewModel>().setIsPro(true);
+          context.read<ChatViewModel>().refreshPlan();
+          showNewDocumentSheet(context);
+        },
+      );
+      return;
+    }
+    showNewDocumentSheet(context);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _DesktopToolbar(onNewDocument: () => showNewDocumentSheet(context)),
+        _DesktopToolbar(onNewDocument: () => _openNewDoc(context)),
         Expanded(
           child: Selector<DocumentsViewModel, bool>(
             selector: (_, vm) => vm.isEmpty,
             builder: (context, isEmpty, _) => isEmpty
-                ? _EmptyState(
-                    onNewDocument: () => showNewDocumentSheet(context),
-                  )
+                ? DocsEmptyState(onNewDocument: () => _openNewDoc(context))
                 : const _DocumentsList(),
           ),
         ),
@@ -34,53 +46,34 @@ class DocumentsViewDesktop extends StatelessWidget {
   }
 }
 
-// ── Toolbar ───────────────────────────────────────────────────────────────────
-
 class _DesktopToolbar extends StatelessWidget {
   final VoidCallback onNewDocument;
-
   const _DesktopToolbar({required this.onNewDocument});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.lg,
-        vertical: VailTheme.sm,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg, vertical: VailTheme.sm),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: VailTheme.ghostBorder))),
       child: Row(
         children: [
-          Text(
-            'AI-produced documents, ready to copy or share.',
-            style: VailTheme.bodySmall,
-          ),
+          Text('AI-produced documents, ready to copy or share.', style: VailTheme.bodySmall),
           const Spacer(),
           GestureDetector(
             onTap: onNewDocument,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: VailTheme.md,
-                vertical: VailTheme.sm,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: VailTheme.md, vertical: VailTheme.sm),
               decoration: BoxDecoration(
-                color: VailTheme.accentSubtle,
-                border: Border.all(
-                    color: VailTheme.accent.withValues(alpha: 0.4)),
+                color: VailTheme.primaryContainer,
+                border: Border.all(color: VailTheme.primary.withValues(alpha: 0.4)),
                 borderRadius: BorderRadius.circular(VailTheme.radiusSm),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.add_rounded,
-                      color: VailTheme.accent, size: 14),
+                  const Icon(Icons.add_rounded, color: VailTheme.primary, size: 14),
                   const SizedBox(width: VailTheme.xs),
-                  Text(
-                    'NEW DOCUMENT',
-                    style: VailTheme.mono.copyWith(color: VailTheme.accent),
-                  ),
+                  Text('NEW DOCUMENT', style: VailTheme.label.copyWith(color: VailTheme.primary, fontSize: 10)),
                 ],
               ),
             ),
@@ -91,36 +84,32 @@ class _DesktopToolbar extends StatelessWidget {
   }
 }
 
-// ── Document list ─────────────────────────────────────────────────────────────
-
 class _DocumentsList extends StatelessWidget {
   const _DocumentsList();
 
   @override
   Widget build(BuildContext context) {
     final docs = context.watch<DocumentsViewModel>().documents;
-
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
+      padding: const EdgeInsets.all(VailTheme.lg),
       itemCount: docs.length,
-      separatorBuilder: (context, index) => const Divider(
-        height: 1,
-        indent: VailTheme.lg,
-        endIndent: VailTheme.lg,
-      ),
-      itemBuilder: (context, index) => _DocumentRow(
-        doc: docs[index],
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (routeCtx) => ChangeNotifierProvider.value(
-              value: context.read<DocumentsViewModel>(),
-              child: DocumentEditorView(document: docs[index]),
-            ),
-          ),
-        ),
-        onDelete: () =>
-            context.read<DocumentsViewModel>().removeDocument(docs[index].id),
-      ),
+      separatorBuilder: (_, __) => const SizedBox(height: VailTheme.sm),
+      itemBuilder: (context, index) {
+        final doc = docs[index];
+        return _DocumentRow(
+          doc: doc,
+          onTap: () {
+            final vm = context.read<DocumentsViewModel>();
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (routeCtx) => ChangeNotifierProvider.value(
+                value: vm,
+                child: DocumentEditorView(document: doc),
+              ),
+            ));
+          },
+          onDelete: () => context.read<DocumentsViewModel>().removeDocument(doc.id),
+        );
+      },
     );
   }
 }
@@ -130,64 +119,83 @@ class _DocumentRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const _DocumentRow({
-    required this.doc,
-    required this.onTap,
-    required this.onDelete,
-  });
+  const _DocumentRow({required this.doc, required this.onTap, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final preview = doc.contentPreview;
+    return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.lg,
-          vertical: VailTheme.md,
+      child: Container(
+        padding: const EdgeInsets.all(VailTheme.md),
+        decoration: BoxDecoration(
+          color: VailTheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+          border: Border.all(color: VailTheme.ghostBorder),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Icon
             Container(
-              width: 32,
-              height: 32,
+              width: 36, height: 36,
               decoration: BoxDecoration(
-                color: VailTheme.accentSubtle,
-                border: Border.all(
-                    color: VailTheme.accent.withValues(alpha: 0.2)),
+                color: VailTheme.primaryContainer.withValues(alpha: 0.12),
+                border: Border.all(color: VailTheme.primary.withValues(alpha: 0.2)),
                 borderRadius: BorderRadius.circular(VailTheme.radiusSm),
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.article_outlined,
-                  color: VailTheme.accent, size: 14),
+              child: const Icon(Icons.article_outlined, color: VailTheme.primary, size: 16),
             ),
             const SizedBox(width: VailTheme.md),
+            // Title + preview
             Expanded(
-              flex: 4,
-              child: Text(
-                doc.title,
-                style: VailTheme.sessionTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    doc.title,
+                    style: VailTheme.label.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (preview.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      preview,
+                      style: VailTheme.bodySmall.copyWith(
+                        color: VailTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
               ),
             ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                doc.wordCountLabel,
-                style: VailTheme.bodySmall,
-              ),
+            const SizedBox(width: VailTheme.lg),
+            // Stats column
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  doc.wordCountLabel,
+                  style: VailTheme.micro.copyWith(color: VailTheme.textMuted, fontSize: 10),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _relativeTime(doc.createdAt),
+                  style: VailTheme.micro.copyWith(color: VailTheme.textMuted, fontSize: 10),
+                ),
+              ],
             ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                _relativeTime(doc.createdAt),
-                style: VailTheme.bodySmall,
-              ),
-            ),
+            const SizedBox(width: VailTheme.md),
             GestureDetector(
               onTap: onDelete,
-              child: const Icon(Icons.delete_outline_rounded,
-                  color: VailTheme.textMuted, size: 16),
+              child: const Icon(Icons.delete_outline_rounded, color: VailTheme.textMuted, size: 15),
             ),
           ],
         ),
@@ -202,68 +210,5 @@ class _DocumentRow extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${dt.day}/${dt.month}/${dt.year}';
-  }
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-class _EmptyState extends StatelessWidget {
-  final VoidCallback onNewDocument;
-
-  const _EmptyState({required this.onNewDocument});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(VailTheme.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: VailTheme.accentSubtle,
-                border: Border.all(
-                    color: VailTheme.accent.withValues(alpha: 0.2)),
-                borderRadius: BorderRadius.circular(VailTheme.radiusMd),
-              ),
-              child: const Icon(Icons.article_outlined,
-                  color: VailTheme.accent, size: 24),
-            ),
-            const SizedBox(height: VailTheme.lg),
-            Text(
-              'No documents yet',
-              style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
-            ),
-            const SizedBox(height: VailTheme.sm),
-            Text(
-              'Ask Vail to write a report, proposal, email,\nor any other document — it appears here.',
-              style: VailTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: VailTheme.xl),
-            GestureDetector(
-              onTap: onNewDocument,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: VailTheme.xl,
-                  vertical: VailTheme.sm + 2,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: VailTheme.accent),
-                  borderRadius: BorderRadius.circular(VailTheme.radiusSm),
-                ),
-                child: Text(
-                  'NEW DOCUMENT',
-                  style: VailTheme.mono.copyWith(color: VailTheme.accent),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

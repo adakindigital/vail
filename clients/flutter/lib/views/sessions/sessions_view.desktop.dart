@@ -3,17 +3,13 @@ import 'package:get_it/get_it.dart';
 import 'package:provider/provider.dart';
 import 'package:vail_app/core/config/app_config.dart';
 import 'package:vail_app/core/theme/vail_theme.dart';
-import 'package:vail_app/core/widgets/vail_button.dart';
+import 'package:vail_app/core/widgets/vail_error_screen.dart';
 import 'package:vail_app/data/models/api/session/session_summary.dart';
 import 'package:vail_app/data/services/vail_client.dart';
 import 'package:vail_app/views/chat/chat_viewmodel.dart';
 import 'package:vail_app/views/sessions/sessions_viewmodel.dart';
+import 'package:vail_app/views/sessions/widgets/sessions_empty_state.dart';
 
-/// Desktop sessions (history) UI — full-width table-style list of past
-/// conversations. No status-bar padding; the desktop shell owns the top bar.
-///
-/// Rendered by [SessionsView] via [ScreenTypeLayout.builder].
-/// Do not use directly — always go through [SessionsView].
 class SessionsViewDesktop extends StatefulWidget {
   final void Function(int) onSwitchTab;
 
@@ -43,65 +39,47 @@ class _SessionsViewDesktopState extends State<SessionsViewDesktop>
       selector: (_, vm) => vm.state,
       builder: (context, state, _) => switch (state) {
         SessionsState.idle || SessionsState.loading => const _LoadingBody(),
-        SessionsState.error => _ErrorBody(
+        SessionsState.error => VailErrorScreen(
             message: context.read<SessionsViewModel>().errorMessage,
             onRetry: () => context.read<SessionsViewModel>().load(),
           ),
-        SessionsState.loaded => _SessionsTable(
-            onSwitchTab: widget.onSwitchTab,
-          ),
+        SessionsState.loaded => _SessionsList(onSwitchTab: widget.onSwitchTab),
       },
     );
   }
 }
 
-// ── Table ─────────────────────────────────────────────────────────────────────
-
-class _SessionsTable extends StatelessWidget {
+class _SessionsList extends StatelessWidget {
   final void Function(int) onSwitchTab;
-
-  const _SessionsTable({required this.onSwitchTab});
-
-  Future<void> _openSession(BuildContext context, String sessionId) async {
-    final config = GetIt.I<AppConfig>();
-    final client = VailClient(
-      endpoint: config.endpoint,
-      apiKey: config.apiKey,
-      sessionId: '',
-    );
-    try {
-      final messages = await client.getSessionMessages(sessionId);
-      if (!context.mounted) return;
-      context.read<ChatViewModel>().loadSession(sessionId, messages);
-    } catch (_) {}
-    if (context.mounted) onSwitchTab(0);
-  }
+  const _SessionsList({required this.onSwitchTab});
 
   @override
   Widget build(BuildContext context) {
     final sessions = context.watch<SessionsViewModel>().sessions;
-    if (sessions.isEmpty) return const _EmptyState();
+    if (sessions.isEmpty) return SessionsEmptyState(onStartChat: () => onSwitchTab(0));
 
     return Column(
       children: [
-        _TableHeader(
-          onRefresh: () => context.read<SessionsViewModel>().load(),
-        ),
+        _ListHeader(onRefresh: () => context.read<SessionsViewModel>().load()),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: VailTheme.sm),
+            padding: const EdgeInsets.all(VailTheme.lg),
             itemCount: sessions.length,
-            separatorBuilder: (context, index) => const Divider(
-              height: 1,
-              indent: VailTheme.lg,
-              endIndent: VailTheme.lg,
-            ),
-            itemBuilder: (context, index) => _SessionRow(
+            separatorBuilder: (_, __) => const SizedBox(height: VailTheme.sm),
+            itemBuilder: (context, index) => _SessionCard(
               session: sessions[index],
-              onTap: () => _openSession(context, sessions[index].id),
-              onDelete: () => context
-                  .read<SessionsViewModel>()
-                  .deleteSession(sessions[index].id),
+              onTap: () async {
+                final config = GetIt.I<AppConfig>();
+                final client = VailClient(endpoint: config.endpoint, apiKey: config.apiKey, sessionId: '');
+                try {
+                  final messages = await client.getSessionMessages(sessions[index].id);
+                  if (context.mounted) {
+                    context.read<ChatViewModel>().loadSession(sessions[index].id, messages);
+                    onSwitchTab(0);
+                  }
+                } catch (_) {}
+              },
+              onDelete: () => context.read<SessionsViewModel>().deleteSession(sessions[index].id),
             ),
           ),
         ),
@@ -110,42 +88,22 @@ class _SessionsTable extends StatelessWidget {
   }
 }
 
-class _TableHeader extends StatelessWidget {
+class _ListHeader extends StatelessWidget {
   final VoidCallback onRefresh;
-
-  const _TableHeader({required this.onRefresh});
+  const _ListHeader({required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: VailTheme.lg,
-        vertical: VailTheme.sm,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: VailTheme.border)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg, vertical: VailTheme.sm),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: VailTheme.ghostBorder))),
       child: Row(
         children: [
-          Expanded(
-            flex: 5,
-            child: Text('TITLE', style: VailTheme.sectionLabel),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text('UPDATED', style: VailTheme.sectionLabel),
-          ),
-          Expanded(
-            flex: 1,
-            child: Text('MESSAGES', style: VailTheme.sectionLabel),
-          ),
+          Text('CONVERSATIONS', style: VailTheme.caption.copyWith(letterSpacing: 1.2, fontSize: 10)),
+          const Spacer(),
           GestureDetector(
             onTap: onRefresh,
-            child: const Icon(
-              Icons.refresh_rounded,
-              color: VailTheme.textSecondary,
-              size: 16,
-            ),
+            child: const Icon(Icons.refresh_rounded, color: VailTheme.onSurfaceVariant, size: 16),
           ),
         ],
       ),
@@ -153,70 +111,84 @@ class _TableHeader extends StatelessWidget {
   }
 }
 
-class _SessionRow extends StatelessWidget {
+class _SessionCard extends StatelessWidget {
   final SessionSummary session;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
-  const _SessionRow({
-    required this.session,
-    required this.onTap,
-    required this.onDelete,
-  });
+  const _SessionCard({required this.session, required this.onTap, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: VailTheme.lg,
-          vertical: VailTheme.md,
+      child: Container(
+        padding: const EdgeInsets.all(VailTheme.md),
+        decoration: BoxDecoration(
+          color: VailTheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+          border: Border.all(color: VailTheme.ghostBorder),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // Avatar
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: VailTheme.primaryContainer.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+                border: Border.all(color: VailTheme.primary.withValues(alpha: 0.2)),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.eco_rounded, color: VailTheme.primary, size: 16),
+            ),
+            const SizedBox(width: VailTheme.md),
+            // Title
             Expanded(
               flex: 5,
+              child: Text(
+                session.displayTitle,
+                style: VailTheme.label.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: VailTheme.lg),
+            // Message count badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: VailTheme.primaryContainer.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(VailTheme.radiusFull),
+                border: Border.all(color: VailTheme.primary.withValues(alpha: 0.15)),
+              ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: VailTheme.textMuted,
-                    size: 14,
-                  ),
-                  const SizedBox(width: VailTheme.sm),
-                  Expanded(
-                    child: Text(
-                      session.displayTitle,
-                      style: VailTheme.sessionTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  const Icon(Icons.chat_bubble_outline_rounded, size: 9, color: VailTheme.primary),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${session.messageCount}',
+                    style: VailTheme.micro.copyWith(color: VailTheme.primary, fontSize: 10),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              flex: 2,
+            const SizedBox(width: VailTheme.md),
+            // Relative time
+            SizedBox(
+              width: 80,
               child: Text(
                 _relativeTime(session.updatedAt),
-                style: VailTheme.bodySmall,
+                style: VailTheme.micro.copyWith(color: VailTheme.textMuted, fontSize: 10),
+                textAlign: TextAlign.right,
               ),
             ),
-            Expanded(
-              flex: 1,
-              child: Text(
-                '${session.messageCount}',
-                style: VailTheme.bodySmall,
-              ),
-            ),
+            const SizedBox(width: VailTheme.md),
             GestureDetector(
               onTap: onDelete,
-              child: const Icon(
-                Icons.delete_outline_rounded,
-                color: VailTheme.textMuted,
-                size: 16,
-              ),
+              child: const Icon(Icons.delete_outline_rounded, color: VailTheme.textMuted, size: 15),
             ),
           ],
         ),
@@ -234,67 +206,10 @@ class _SessionRow extends StatelessWidget {
   }
 }
 
-// ── States ────────────────────────────────────────────────────────────────────
-
 class _LoadingBody extends StatelessWidget {
   const _LoadingBody();
-
   @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(
-          color: VailTheme.accent, strokeWidth: 1.5),
-    );
-  }
-}
-
-class _ErrorBody extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorBody({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(VailTheme.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.wifi_off_rounded,
-                color: VailTheme.textMuted, size: 32),
-            const SizedBox(height: VailTheme.md),
-            Text(message,
-                style: VailTheme.bodySmall, textAlign: TextAlign.center),
-            const SizedBox(height: VailTheme.xl),
-            VailButton.primary(label: 'RETRY', onTap: onRetry),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.history_rounded,
-              color: VailTheme.textMuted, size: 40),
-          const SizedBox(height: VailTheme.md),
-          Text('No sessions yet',
-              style: VailTheme.body.copyWith(color: VailTheme.textSecondary)),
-          const SizedBox(height: VailTheme.sm),
-          Text('Start a conversation to see it here.',
-              style: VailTheme.bodySmall),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const Center(
+    child: CircularProgressIndicator(color: VailTheme.primary, strokeWidth: 1.5),
+  );
 }

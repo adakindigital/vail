@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS session_messages (
     sequence    INTEGER NOT NULL,
     role        TEXT    NOT NULL,
     content     TEXT    NOT NULL,
+    model       TEXT,
     created_at  TEXT    NOT NULL
 );
 """
@@ -67,6 +68,7 @@ _MIGRATIONS = [
     "ALTER TABLE interaction_logs ADD COLUMN session_id TEXT",
     "ALTER TABLE interaction_logs ADD COLUMN tokens_in INTEGER",
     "ALTER TABLE interaction_logs ADD COLUMN tokens_out INTEGER",
+    "ALTER TABLE session_messages ADD COLUMN model TEXT",
 ]
 
 
@@ -168,17 +170,21 @@ async def get_session_messages(session_id: str) -> list[dict]:
     if db is None:
         return []
     async with db.execute(
-        "SELECT role, content FROM session_messages WHERE session_id = ? ORDER BY sequence ASC",
+        "SELECT role, content, model FROM session_messages WHERE session_id = ? ORDER BY sequence ASC",
         (session_id,),
     ) as cursor:
         rows = await cursor.fetchall()
-    return [{"role": row["role"], "content": row["content"]} for row in rows]
+    return [
+        {"role": row["role"], "content": row["content"], "model": row["model"]}
+        for row in rows
+    ]
 
 
 async def append_session_turn(
     session_id: str,
     user_content: str,
     assistant_content: str,
+    model: str,
 ) -> bool:
     """Append a user+assistant turn and update session metadata.
 
@@ -207,8 +213,8 @@ async def append_session_turn(
         (session_id, next_seq, "user", user_content, now),
     )
     await db.execute(
-        "INSERT INTO session_messages (session_id, sequence, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (session_id, next_seq + 1, "assistant", assistant_content, now),
+        "INSERT INTO session_messages (session_id, sequence, role, content, model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (session_id, next_seq + 1, "assistant", assistant_content, model, now),
     )
 
     # Keep the raw first-message fallback title until the model generates a real one
