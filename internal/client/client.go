@@ -52,8 +52,9 @@ type ToolCall struct {
 
 // StreamResult is what StreamWithTools returns when the model finishes a turn.
 type StreamResult struct {
-	Content   string
-	ToolCalls []ToolCall
+	Content      string
+	ToolCalls    []ToolCall
+	UIComponents []map[string]any
 }
 
 type Client struct {
@@ -88,13 +89,13 @@ func (c *Client) SetSessionID(id string) {
 // Stream sends messages and calls onToken for each streamed token.
 // Returns full response text when complete.
 func (c *Client) Stream(messages []Message, onToken func(string)) (string, error) {
-	result, err := c.StreamWithTools(messages, nil, onToken)
+	result, err := c.StreamWithTools(messages, nil, onToken, nil)
 	return result.Content, err
 }
 
 // StreamWithTools sends messages with optional tool definitions.
 // If the model makes tool calls, they are returned in StreamResult.ToolCalls.
-func (c *Client) StreamWithTools(messages []Message, tools []ToolDef, onToken func(string)) (StreamResult, error) {
+func (c *Client) StreamWithTools(messages []Message, tools []ToolDef, onToken func(string), onUI func(map[string]any)) (StreamResult, error) {
 	body := map[string]any{
 		"model":    c.model,
 		"messages": messages,
@@ -110,7 +111,7 @@ func (c *Client) StreamWithTools(messages []Message, tools []ToolDef, onToken fu
 	}
 	defer resp.Body.Close()
 
-	return c.parseStream(resp.Body, onToken)
+	return c.parseStream(resp.Body, onToken, onUI)
 }
 
 // post sends a JSON POST to /v1/chat/completions and returns the raw response.
@@ -152,7 +153,7 @@ func (c *Client) post(body map[string]any) (*http.Response, error) {
 
 // parseStream reads an SSE response body, firing onToken for content tokens and
 // accumulating tool call deltas. Returns the full result when the stream ends.
-func (c *Client) parseStream(body io.Reader, onToken func(string)) (StreamResult, error) {
+func (c *Client) parseStream(body io.Reader, onToken func(string), onUI func(map[string]any)) (StreamResult, error) {
 	type toolCallDelta struct {
 		Index    int    `json:"index"`
 		ID       string `json:"id"`
@@ -171,7 +172,8 @@ func (c *Client) parseStream(body io.Reader, onToken func(string)) (StreamResult
 			} `json:"delta"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
-		Error *struct {
+		UIComponents []map[string]any `json:"ui_components"`
+		Error        *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
@@ -180,6 +182,7 @@ func (c *Client) parseStream(body io.Reader, onToken func(string)) (StreamResult
 		content      strings.Builder
 		tcAccum      = map[int]*ToolCall{} // indexed by tool call index
 		receivedDone = false
+		uiComponents []map[string]any
 	)
 
 	scanner := bufio.NewScanner(body)
@@ -204,6 +207,16 @@ func (c *Client) parseStream(body io.Reader, onToken func(string)) (StreamResult
 
 		if c.Error != nil {
 			return StreamResult{Content: content.String()}, fmt.Errorf("model error: %s", c.Error.Message)
+		}
+
+		// Handle UI Components
+		if len(c.UIComponents) > 0 {
+			uiComponents = append(uiComponents, c.UIComponents...)
+			if onUI != nil {
+				for _, comp := range c.UIComponents {
+					onUI(comp)
+				}
+			}
 		}
 
 		if len(c.Choices) == 0 {
@@ -251,7 +264,10 @@ func (c *Client) parseStream(body io.Reader, onToken func(string)) (StreamResult
 	}
 
 	// Flatten accumulated tool calls into order
-	result := StreamResult{Content: content.String()}
+	result := StreamResult{
+		Content:      content.String(),
+		UIComponents: uiComponents,
+	}
 	for i := 0; i < len(tcAccum); i++ {
 		if tc, ok := tcAccum[i]; ok {
 			result.ToolCalls = append(result.ToolCalls, *tc)

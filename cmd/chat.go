@@ -240,7 +240,14 @@ func agenticTurn(c *client.Client, th ui.Theme, cfg config.Config, messages *[]c
 		done := make(chan struct{})
 		go spin(done, th)
 
-		result, err := c.StreamWithTools(*messages, toolDefs, nil)
+		result, err := c.StreamWithTools(*messages, toolDefs, nil, func(comp map[string]any) {
+			if uiType, ok := comp["ui_type"].(string); ok && uiType == "status" {
+				if msg, ok := comp["message"].(string); ok {
+					fmt.Print("\r\033[K") // clear spinner
+					fmt.Print(th.ToolDone(msg))
+				}
+			}
+		})
 
 		close(done)
 		time.Sleep(20 * time.Millisecond)

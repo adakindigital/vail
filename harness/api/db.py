@@ -57,7 +57,10 @@ CREATE TABLE IF NOT EXISTS session_messages (
     session_id  TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     sequence    INTEGER NOT NULL,
     role        TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
+    content     TEXT,
+    tool_calls  TEXT,
+    tool_call_id TEXT,
+    name        TEXT,
     model       TEXT,
     created_at  TEXT    NOT NULL
 );
@@ -69,6 +72,9 @@ _MIGRATIONS = [
     "ALTER TABLE interaction_logs ADD COLUMN tokens_in INTEGER",
     "ALTER TABLE interaction_logs ADD COLUMN tokens_out INTEGER",
     "ALTER TABLE session_messages ADD COLUMN model TEXT",
+    "ALTER TABLE session_messages ADD COLUMN tool_calls TEXT",
+    "ALTER TABLE session_messages ADD COLUMN tool_call_id TEXT",
+    "ALTER TABLE session_messages ADD COLUMN name TEXT",
 ]
 
 
@@ -170,14 +176,80 @@ async def get_session_messages(session_id: str) -> list[dict]:
     if db is None:
         return []
     async with db.execute(
-        "SELECT role, content, model FROM session_messages WHERE session_id = ? ORDER BY sequence ASC",
+        "SELECT role, content, model, tool_calls, tool_call_id, name FROM session_messages WHERE session_id = ? ORDER BY sequence ASC",
         (session_id,),
     ) as cursor:
         rows = await cursor.fetchall()
-    return [
-        {"role": row["role"], "content": row["content"], "model": row["model"]}
-        for row in rows
-    ]
+    
+    messages = []
+    for row in rows:
+        msg = {"role": row["role"], "content": row["content"]}
+        if row["model"]: msg["model"] = row["model"]
+        if row["tool_calls"]: msg["tool_calls"] = json.loads(row["tool_calls"])
+        if row["tool_call_id"]: msg["tool_call_id"] = row["tool_call_id"]
+        if row["name"]: msg["name"] = row["name"]
+        messages.append(msg)
+    return messages
+
+
+async def append_session_messages(session_id: str, messages: list[dict]) -> bool:
+    """Append multiple messages to a session in one transaction.
+    Returns True if this added the first messages to the session.
+    """
+    db = _db
+    if db is None:
+        return False
+
+    async with db.execute(
+        "SELECT message_count, COALESCE(MAX(sequence), 0) AS max_seq FROM sessions LEFT JOIN session_messages ON session_messages.session_id = sessions.id WHERE sessions.id = ?",
+        (session_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    
+    is_first = (row["message_count"] == 0) if row else False
+    next_seq = (row["max_seq"] if row else 0) + 1
+    now = datetime.now(timezone.utc).isoformat()
+
+    for i, msg in enumerate(messages):
+        role = msg.get("role")
+        content = msg.get("content")
+        model = msg.get("model")
+        tool_calls = msg.get("tool_calls")
+        tc_id = msg.get("tool_call_id")
+        name = msg.get("name")
+
+        await db.execute(
+            """
+            INSERT INTO session_messages (session_id, sequence, role, content, model, tool_calls, tool_call_id, name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                next_seq + i,
+                role,
+                content if content is not None else "",
+                model,
+                json.dumps(tool_calls) if tool_calls else None,
+                tc_id,
+                name,
+                now,
+            ),
+        )
+
+    await db.execute(
+        "UPDATE sessions SET updated_at = ?, message_count = message_count + ? WHERE id = ?",
+        (now, len(messages), session_id),
+    )
+    # Set fallback title if not present
+    if is_first:
+        first_user = next((m.get("content") for m in messages if m.get("role") == "user"), "New Session")
+        await db.execute(
+            "UPDATE sessions SET title = ? WHERE id = ? AND title IS NULL",
+            (str(first_user)[:80], session_id),
+        )
+
+    await db.commit()
+    return is_first
 
 
 async def append_session_turn(
@@ -191,45 +263,11 @@ async def append_session_turn(
     Returns True if this was the first turn in the session (message_count was 0),
     so callers can trigger title generation only once.
     """
-    db = _db
-    if db is None:
-        return False
-
-    # Snapshot message_count before we increment — tells callers if this is turn 1
-    async with db.execute(
-        "SELECT message_count, COALESCE(MAX(sm.sequence), 0) AS max_seq "
-        "FROM sessions LEFT JOIN session_messages sm ON sm.session_id = sessions.id "
-        "WHERE sessions.id = ?",
-        (session_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    is_first_turn = (row["message_count"] == 0) if row else False
-    next_seq = (row["max_seq"] if row else 0) + 1
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    await db.execute(
-        "INSERT INTO session_messages (session_id, sequence, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (session_id, next_seq, "user", user_content, now),
-    )
-    await db.execute(
-        "INSERT INTO session_messages (session_id, sequence, role, content, model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (session_id, next_seq + 1, "assistant", assistant_content, model, now),
-    )
-
-    # Keep the raw first-message fallback title until the model generates a real one
-    await db.execute(
-        """
-        UPDATE sessions SET
-            updated_at    = ?,
-            message_count = message_count + 2,
-            title         = CASE WHEN title IS NULL THEN ? ELSE title END
-        WHERE id = ?
-        """,
-        (now, user_content[:80], session_id),
-    )
-    await db.commit()
-    return is_first_turn
+    messages = [
+        {"role": "user", "content": user_content},
+        {"role": "assistant", "content": assistant_content, "model": model}
+    ]
+    return await append_session_messages(session_id, messages)
 
 
 async def set_session_title(session_id: str, title: str) -> None:

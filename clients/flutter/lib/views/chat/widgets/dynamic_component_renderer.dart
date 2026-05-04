@@ -72,6 +72,32 @@ class _DynamicComponentRendererState extends State<DynamicComponentRenderer> {
   Widget build(BuildContext context) {
     final component = widget.component;
 
+    if (component.type == 'status') {
+      return Padding(
+        padding: const EdgeInsets.only(top: VailTheme.md),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(VailTheme.primary),
+              ),
+            ),
+            const SizedBox(width: VailTheme.sm),
+            Text(
+              component.description ?? 'Processing...',
+              style: VailTheme.caption.copyWith(
+                color: VailTheme.textMuted,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_submitted || widget.isSubmitted) {
       return _SubmittedBanner(
         actionLabel: component.actions

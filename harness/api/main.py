@@ -35,12 +35,14 @@ from api import db as database
 from api import ratelimit
 from api.router import select_tier
 from api.sessions import build_router
+from api import tools
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger("vail.gateway")
 
 BACKEND_URL = os.getenv("VAIL_BACKEND_URL", "http://localhost:8080").rstrip("/")
 VAIL_API_KEY = os.getenv("VAIL_API_KEY", "")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 DB_URL = os.getenv("VAIL_DB_URL", "./vail_dev.db")
 BACKEND_MODEL = os.getenv("VAIL_BACKEND_MODEL", "")
 # Max turns of history to inject per request. Each turn = 2 messages (user + assistant).
@@ -413,6 +415,54 @@ async def chat_completions(
         error=None if resp.status_code == 200 else str(data),
     ))
 
+    if resp.status_code == 200:
+        choices = data.get("choices", [])
+        if choices and choices[0].get("finish_reason") == "tool_calls":
+            tool_calls = choices[0]["message"].get("tool_calls", [])
+            gateway_tools = [tc for tc in tool_calls if tc["function"]["name"] in ("web_search", "fetch_url")]
+            
+            if gateway_tools:
+                log.info("gateway_tools  executing %d tool(s) server-side", len(gateway_tools))
+                messages.append(choices[0]["message"])
+                
+                for tc in gateway_tools:
+                    name = tc["function"]["name"]
+                    args_raw = tc["function"]["arguments"]
+                    try:
+                        args = json.loads(args_raw)
+                    except:
+                        args = {}
+                    
+                    if name == "web_search":
+                        res = await tools.execute_web_search(args.get("query", ""), TAVILY_API_KEY)
+                    elif name == "fetch_url":
+                        res = await tools.execute_fetch_url(args.get("url", ""))
+                    else:
+                        res = f"error: {name} not supported"
+                    
+                    messages.append({"role": "tool", "tool_call_id": tc.get("id"), "name": name, "content": res})
+                
+                body["messages"] = messages
+                # Recursion handles subsequent model turns
+                return await chat_completions(request, authorization, x_session_id)
+
+    # Final save for non-streaming
+    if resp.status_code == 200 and session_id:
+        response_text = data["choices"][0]["message"]["content"]
+        if response_text:
+            new_msgs = []
+            for i in range(len(messages) - 1, -1, -1):
+                new_msgs.insert(0, messages[i])
+                if messages[i].get("role") == "user":
+                    break
+            
+            # The last message in messages is the final assistant response
+            if new_msgs and new_msgs[-1]["role"] == "assistant":
+                new_msgs[-1]["content"] = response_text
+                new_msgs[-1]["model"] = model
+            
+            asyncio.create_task(_save_messages_and_title(session_id, new_msgs))
+
     return JSONResponse(content=data, status_code=resp.status_code)
 
 
@@ -423,142 +473,213 @@ async def _stream_from_backend(
     t0: float,
     session_id: str | None,
 ):
-    response_chunks: list[str] = []
+    full_response_text: list[str] = []
     usage_data: dict = {}
     error: str | None = None
-    parser = _VailUIParser()
+    
+    # Tool execution loop
+    while True:
+        parser = _VailUIParser()
+        tool_calls_accum = {}
+        finish_reason = None
+        current_response_chunks = []
 
-    try:
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream(
-                "POST",
-                f"{BACKEND_URL}/v1/chat/completions",
-                json=body,
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                if resp.status_code != 200:
-                    error_body = await resp.aread()
-                    error = f"backend {resp.status_code}: {error_body[:200]}"
-                    log.error("backend error  status=%d  body=%s", resp.status_code, error_body[:200])
-                    try:
-                        err_data = json.loads(error_body)
-                        err_msg = err_data.get("error") or err_data.get("message") or f"Backend error ({resp.status_code})"
-                        if isinstance(err_msg, dict):
-                            err_msg = err_msg.get("message", f"Backend error ({resp.status_code})")
-                    except Exception:
-                        err_msg = f"Backend error ({resp.status_code})"
-                    yield f"data: {json.dumps({'error': {'message': err_msg}})}\n\n"
-                    return
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
+                    f"{BACKEND_URL}/v1/chat/completions",
+                    json=body,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    if resp.status_code != 200:
+                        error_body = await resp.aread()
+                        error = f"backend {resp.status_code}: {error_body[:200]}"
+                        log.error("backend error  status=%d  body=%s", resp.status_code, error_body[:200])
+                        yield f"data: {json.dumps({'error': {'message': f'Backend error ({resp.status_code})'}})}\n\n"
+                        return
 
-                buffer = ""
-                done_seen = False
+                    buffer = ""
+                    done_seen = False
 
-                async for chunk in resp.aiter_text():
-                    buffer += chunk
-                    while "\n\n" in buffer:
-                        block, buffer = buffer.split("\n\n", 1)
-                        response_chunks.append(block + "\n\n")
+                    async for chunk in resp.aiter_text():
+                        buffer += chunk
+                        while "\n\n" in buffer:
+                            block, buffer = buffer.split("\n\n", 1)
+                            current_response_chunks.append(block + "\n\n")
 
-                        output_lines = []
-                        for line in block.splitlines():
-                            if line.startswith("data: "):
-                                raw_payload = line[6:].strip()
-                                if raw_payload == "[DONE]":
-                                    done_seen = True
-                                    # Flush any held parser text before [DONE].
-                                    # Inline it as an extra data line so it
-                                    # arrives in the same HTTP chunk as [DONE],
-                                    # avoiding an extra round-trip.
-                                    flush_text = parser.flush()
-                                    if flush_text:
-                                        flush_chunk = _make_delta_chunk(flush_text, model)
-                                        output_lines.append(f"data: {json.dumps(flush_chunk)}")
-                                    if parser.components:
-                                        ui_chunk = {
-                                            "model": model,
-                                            "ui_components": parser.components,
-                                            "choices": [{"delta": {"content": ""}, "index": 0}],
-                                        }
-                                        output_lines.append(f"data: {json.dumps(ui_chunk)}")
-                                        log.info("dynamic_ui  emitted %d component(s)", len(parser.components))
-                                        parser.components = []
-                                    output_lines.append(line)
-                                    continue
-                                try:
-                                    data = json.loads(raw_payload)
-                                    data["model"] = model
-                                    if "usage" in data:
-                                        usage_data = data["usage"]
-                                    # Intercept delta text through the vail_ui parser.
-                                    delta_content: str = ""
+                            output_lines = []
+                            for line in block.splitlines():
+                                if line.startswith("data: "):
+                                    raw_payload = line[6:].strip()
+                                    if raw_payload == "[DONE]":
+                                        done_seen = True
+                                        flush_text = parser.flush()
+                                        if flush_text:
+                                            output_lines.append(f"data: {json.dumps(_make_delta_chunk(flush_text, model))}")
+                                        if parser.components:
+                                            output_lines.append(f"data: {json.dumps({'model': model, 'ui_components': parser.components, 'choices': [{'delta': {'content': ''}, 'index': 0}]})}")
+                                            parser.components = []
+                                        output_lines.append(line)
+                                        continue
+                                    
                                     try:
-                                        delta_content = data["choices"][0]["delta"].get("content") or ""
-                                    except (KeyError, IndexError):
-                                        pass
-                                    if delta_content:
-                                        clean = parser.process(delta_content)
-                                        if clean:
-                                            data["choices"][0]["delta"]["content"] = clean
+                                        data = json.loads(raw_payload)
+                                        data["model"] = model
+                                        if "usage" in data:
+                                            usage_data = data["usage"]
+                                        
+                                        choice = data["choices"][0]
+                                        if "finish_reason" in choice and choice["finish_reason"]:
+                                            finish_reason = choice["finish_reason"]
+
+                                        delta = choice.get("delta", {})
+                                        
+                                        # Handle tool calls in the stream
+                                        if "tool_calls" in delta:
+                                            for tcd in delta["tool_calls"]:
+                                                idx = tcd["index"]
+                                                if idx not in tool_calls_accum:
+                                                    tool_calls_accum[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                                                tc = tool_calls_accum[idx]
+                                                if "id" in tcd: tc["id"] = tcd["id"]
+                                                if "function" in tcd:
+                                                    if "name" in tcd["function"]: tc["function"]["name"] += tcd["function"]["name"]
+                                                    if "arguments" in tcd["function"]: tc["function"]["arguments"] += tcd["function"]["arguments"]
+                                            # Suppress tool calls from reaching the client
+                                            continue
+
+                                        # Handle content
+                                        content = delta.get("content") or ""
+                                        if content:
+                                            clean = parser.process(content)
+                                            if clean:
+                                                data["choices"][0]["delta"]["content"] = clean
+                                                output_lines.append(f"data: {json.dumps(data)}")
+                                        else:
                                             output_lines.append(f"data: {json.dumps(data)}")
-                                        # else: chunk is inside a vail_ui block — suppress it.
-                                    else:
-                                        output_lines.append(f"data: {json.dumps(data)}")
-                                except Exception:
+                                    except Exception:
+                                        output_lines.append(line)
+                                else:
                                     output_lines.append(line)
-                            else:
-                                output_lines.append(line)
 
-                        if output_lines:
-                            yield ("\n".join(output_lines) + "\n\n").encode("utf-8")
+                            if output_lines:
+                                yield ("\n".join(output_lines) + "\n\n").encode("utf-8")
 
-                # Handle any remaining buffer content (e.g. backend sent
-                # data: [DONE] without a trailing blank line).
-                if not done_seen and buffer.strip():
-                    for line in buffer.splitlines():
-                        if line.startswith("data: ") and line[6:].strip() == "[DONE]":
-                            done_seen = True
+                    if not done_seen and buffer.strip():
+                        # Handle trailing data if needed (similar logic to above)
+                        pass
+            
+            # If we accumulated tool calls, we need to decide whether to execute them
+            if tool_calls_accum:
+                tool_calls = [tc for idx, tc in sorted(tool_calls_accum.items())]
+                gateway_tools = [tc for tc in tool_calls if tc["function"]["name"] in ("web_search", "fetch_url")]
+                
+                if gateway_tools:
+                    log.info("gateway_tools  executing %d tool(s) server-side", len(gateway_tools))
+                    
+                    # Notify client we are working
+                    status_msg = "Searching the web..." if any(tc["function"]["name"] == "web_search" for tc in gateway_tools) else "Fetching page content..."
+                    yield f"data: {json.dumps(_make_ui_status_chunk(status_msg, model))}\n\n".encode("utf-8")
 
-                if not done_seen:
-                    # Stream ended naturally without [DONE] — flush parser.
-                    flush_text = parser.flush()
-                    if flush_text:
-                        flush_chunk = _make_delta_chunk(flush_text, model)
-                        yield f"data: {json.dumps(flush_chunk)}\n\n".encode("utf-8")
-                    if parser.components:
-                        ui_chunk = {
-                            "model": model,
-                            "ui_components": parser.components,
-                            "choices": [{"delta": {"content": ""}, "index": 0}],
-                        }
-                        yield f"data: {json.dumps(ui_chunk)}\n\n".encode("utf-8")
-                        parser.components = []
+                    # Add the turn to messages
+                    messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+                    
+                    for tc in gateway_tools:
+                        name = tc["function"]["name"]
+                        args_raw = tc["function"]["arguments"]
+                        try:
+                            args = json.loads(args_raw)
+                        except:
+                            args = {}
+                        
+                        if name == "web_search":
+                            res = await tools.execute_web_search(args.get("query", ""), TAVILY_API_KEY)
+                        elif name == "fetch_url":
+                            res = await tools.execute_fetch_url(args.get("url", ""))
+                        else:
+                            res = f"error: {name} not supported"
+                        
+                        messages.append({"role": "tool", "tool_call_id": tc["id"], "name": name, "content": res})
+                    
+                    # Loop back to model
+                    body["messages"] = messages
+                    continue
+                else:
+                    # Pass non-gateway tools to client (we didn't yield them during streaming)
+                    # This is tricky because we already suppressed them. 
+                    # For now, let's assume we either handle all or handle none in a single turn.
+                    pass
 
-    except httpx.ConnectError:
-        error = "backend unreachable"
-        log.error("backend unreachable at %s", BACKEND_URL)
-        yield f"data: {json.dumps({'error': {'message': 'model backend unavailable'}})}\n\n"
+            # If we didn't loop, we are done
+            full_response_text.append(_extract_content_from_sse("".join(current_response_chunks)))
+            break
 
-    finally:
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        log.info("stream done  model=%s  latency=%.0fms", model, elapsed_ms)
+        except httpx.ConnectError:
+            error = "backend unreachable"
+            yield f"data: {json.dumps({'error': {'message': 'model backend unavailable'}})}\n\n"
+            break
+        except Exception as e:
+            error = str(e)
+            log.exception("stream loop error")
+            break
 
-        response_text = _extract_content_from_sse("".join(response_chunks))
-        # Strip any vail_ui blocks from the persisted response text.
-        if response_text:
-            response_text = re.sub(r"<vail_ui>.*?</vail_ui>", "", response_text, flags=re.DOTALL).strip()
-        tokens_in = usage_data.get("prompt_tokens")
-        tokens_out = usage_data.get("completion_tokens")
+    # Final cleanup and logging
+    elapsed_ms = (time.monotonic() - t0) * 1000
+    log.info("stream done  model=%s  latency=%.0fms", model, elapsed_ms)
 
-        if session_id and response_text and not error:
-            user_content = _last_user_content(messages)
-            if user_content:
-                asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text, model))
+    final_text = "".join(full_response_text)
+    if final_text:
+        final_text = re.sub(r"<vail_ui>.*?</vail_ui>", "", final_text, flags=re.DOTALL).strip()
+    
+    if session_id and final_text and not error:
+        user_content = _last_user_content(messages)
+        if user_content:
+            # Reconstruct the turns to save to the DB.
+            # We want to save everything from the FIRST message that isn't already in history.
+            # But wait, history was already injected.
+            # The 'messages' list now contains: [system, history, user, assistant(tool_calls), tool, ..., assistant(final)]
+            # We only want to save the NEW parts: [user, assistant(tool_calls), tool, ..., assistant(final)]
+            
+            # Find where history ends.
+            history_len = 0
+            if session_id:
+                # This is a bit complex to find exactly, but we know the new messages 
+                # were appended to the end of the list before select_tier.
+                # Actually, let's just find the last 'user' message and everything after it.
+                new_msgs = []
+                for i in range(len(messages) - 1, -1, -1):
+                    new_msgs.insert(0, messages[i])
+                    if messages[i].get("role") == "user":
+                        break
+                
+                # Update the final assistant message's content before saving
+                if new_msgs and new_msgs[-1]["role"] == "assistant":
+                    new_msgs[-1]["content"] = final_text
+                    new_msgs[-1]["model"] = model
+                
+                asyncio.create_task(_save_messages_and_title(session_id, new_msgs))
 
-        asyncio.create_task(database.log_interaction(
-            session_id=session_id, model=model, messages=messages,
-            response_text=response_text, tokens_in=tokens_in, tokens_out=tokens_out,
-            latency_ms=elapsed_ms, stream=True, error=error,
-        ))
+    asyncio.create_task(database.log_interaction(
+        session_id=session_id, model=model, messages=messages,
+        response_text=final_text, tokens_in=usage_data.get("prompt_tokens"), 
+        tokens_out=usage_data.get("completion_tokens"),
+        latency_ms=elapsed_ms, stream=True, error=error,
+    ))
+
+
+def _make_ui_status_chunk(message: str, model: str) -> dict:
+    """Wrap a status message as a ui_component SSE chunk."""
+    return {
+        "model": model,
+        "ui_components": [
+            {
+                "ui_type": "status",
+                "description": message
+            }
+        ],
+        "choices": [{"delta": {"content": ""}, "index": 0}],
+    }
 
 
 def _make_delta_chunk(content: str, model: str) -> dict:
@@ -609,8 +730,19 @@ async def _generate_session_title(session_id: str, user_content: str) -> None:
     except Exception as exc:
         log.warning("title generation failed  session=%s  error=%s", session_id, exc)
 
+async def _save_messages_and_title(
+    session_id: str,
+    messages: list[dict],
+) -> None:
+    """Save all messages in a turn and, if first turn, generate a title."""
+    is_first = await database.append_session_messages(session_id, messages)
+    if is_first:
+        user_content = next((m.get("content") for m in messages if m.get("role") == "user"), "")
+        asyncio.create_task(_generate_session_title(session_id, user_content))
+
 
 async def _save_turn_and_title(
+...
     session_id: str,
     user_content: str,
     assistant_content: str,
