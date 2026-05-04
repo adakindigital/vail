@@ -742,7 +742,6 @@ async def _save_messages_and_title(
 
 
 async def _save_turn_and_title(
-...
     session_id: str,
     user_content: str,
     assistant_content: str,
