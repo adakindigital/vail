@@ -12,8 +12,9 @@ Run in dev:
 Environment variables:
     VAIL_BACKEND_URL      Where the model backend lives (default: http://localhost:8080)
     VAIL_BACKEND_MODEL    Explicit backend model ID (overrides auto-detect)
-    VAIL_API_KEY          Required API key — empty disables auth (local dev only)
-    VAIL_DB_URL           SQLite file path or Postgres DSN (default: ./vail_dev.db)
+    VAIL_API_KEY          Legacy CLI key — empty disables static key auth
+    VAIL_JWT_SECRET       Secret for signing user JWTs (required for web auth)
+    VAIL_DB_URL           Postgres DSN (default: postgresql://postgres:vail@localhost:5432/vail)
     VAIL_RATE_LIMIT_RPM   Requests per minute per key (default: 60, 0 = disabled)
     PORT                  Port to serve on (default: 9090)
 """
@@ -27,13 +28,14 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi import Depends, FastAPI, Request, Header, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import db as database
 from api import ratelimit
 from api.router import select_tier
+from api.auth import get_current_user, router as auth_router
 from api.sessions import build_router
 from api import tools
 
@@ -41,9 +43,8 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s  %(levelname)s  %(m
 log = logging.getLogger("vail.gateway")
 
 BACKEND_URL = os.getenv("VAIL_BACKEND_URL", "http://localhost:8080").rstrip("/")
-VAIL_API_KEY = os.getenv("VAIL_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-DB_URL = os.getenv("VAIL_DB_URL", "./vail_dev.db")
+DB_URL = os.getenv("VAIL_DB_URL", "postgresql://postgres:vail@localhost:5432/vail")
 BACKEND_MODEL = os.getenv("VAIL_BACKEND_MODEL", "")
 # Max turns of history to inject per request. Each turn = 2 messages (user + assistant).
 # Prevents long sessions from overflowing the model's context window.
@@ -58,7 +59,7 @@ _DYNAMIC_UI_TIERS: frozenset[str] = frozenset({"vail-pro", "vail-max"})
 # Dynamic context-gathering (vail_ui) support
 # ---------------------------------------------------------------------------
 
-_VAIL_UI_SYSTEM_PROMPT = """You are Vail — an intelligent assistant that can render interactive UI components directly in the conversation to gather context and improve your output quality.
+_VAIL_UI_SYSTEM_PROMPT = """You are Vail — an intelligent assistant built by Adakin Digital. You can render interactive UI components directly in the conversation to gather context and improve your output quality.
 
 WHEN TO EMIT A UI BLOCK:
 - The user's request is vague or ambiguous and more context would significantly improve your answer.
@@ -274,10 +275,9 @@ async def lifespan(app: FastAPI):
     await database.close_db(db)
 
 
-app = FastAPI(title="Vail API Gateway", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Vail API Gateway", version="0.3.0", lifespan=lifespan)
 
-# Allow Flutter web (and any local dev origin) to reach the gateway.
-# In production, tighten origins to the actual deployed domain.
+# In production, tighten allow_origins to the deployed web app domain.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -285,21 +285,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(build_router(VAIL_API_KEY))
-
-
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
-
-def check_auth(authorization: str) -> None:
-    if not VAIL_API_KEY:
-        return
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-    token = authorization.removeprefix("Bearer ").strip()
-    if token != VAIL_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+app.include_router(auth_router)
+app.include_router(build_router())
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +298,8 @@ async def chat_completions(
     request: Request,
     authorization: str = Header(default=""),
     x_session_id: str = Header(default=""),
+    user_id: str | None = Depends(get_current_user),
 ):
-    check_auth(authorization)
-
     client_ip = request.client.host if request.client else "unknown"
     ratelimit.check(authorization, client_ip)
 
@@ -326,7 +312,7 @@ async def chat_completions(
 
     # Inject session history before the current messages
     if session_id:
-        await database.get_or_create_session(session_id)
+        await database.get_or_create_session(session_id, user_id)
         history = await database.get_session_messages(session_id)
         if history:
             # Cap to last N turns so long sessions don't overflow the context window
@@ -363,7 +349,7 @@ async def chat_completions(
 
     if is_stream:
         return StreamingResponse(
-            _stream_from_backend(body, model, messages, t0, session_id),
+            _stream_from_backend(body, model, messages, t0, session_id, user_id),
             media_type="text/event-stream",
             headers={"X-Accel-Buffering": "no"},
         )
@@ -377,7 +363,7 @@ async def chat_completions(
             )
         except httpx.ConnectError:
             asyncio.create_task(database.log_interaction(
-                session_id=session_id, model=model, messages=messages,
+                user_id=user_id, session_id=session_id, model=model, messages=messages,
                 response_text=None, tokens_in=None, tokens_out=None,
                 latency_ms=(time.monotonic() - t0) * 1000, stream=False,
                 error="backend unavailable",
@@ -409,7 +395,7 @@ async def chat_completions(
                 asyncio.create_task(_save_turn_and_title(session_id, user_content, response_text, model))
 
     asyncio.create_task(database.log_interaction(
-        session_id=session_id, model=model, messages=messages,
+        user_id=user_id, session_id=session_id, model=model, messages=messages,
         response_text=response_text, tokens_in=tokens_in, tokens_out=tokens_out,
         latency_ms=elapsed_ms, stream=False,
         error=None if resp.status_code == 200 else str(data),
@@ -472,6 +458,7 @@ async def _stream_from_backend(
     messages: list,
     t0: float,
     session_id: str | None,
+    user_id: str | None = None,
 ):
     full_response_text: list[str] = []
     usage_data: dict = {}
@@ -661,8 +648,8 @@ async def _stream_from_backend(
                 asyncio.create_task(_save_messages_and_title(session_id, new_msgs))
 
     asyncio.create_task(database.log_interaction(
-        session_id=session_id, model=model, messages=messages,
-        response_text=final_text, tokens_in=usage_data.get("prompt_tokens"), 
+        user_id=user_id, session_id=session_id, model=model, messages=messages,
+        response_text=final_text, tokens_in=usage_data.get("prompt_tokens"),
         tokens_out=usage_data.get("completion_tokens"),
         latency_ms=elapsed_ms, stream=True, error=error,
     ))
@@ -672,12 +659,7 @@ def _make_ui_status_chunk(message: str, model: str) -> dict:
     """Wrap a status message as a ui_component SSE chunk."""
     return {
         "model": model,
-        "ui_components": [
-            {
-                "ui_type": "status",
-                "description": message
-            }
-        ],
+        "ui_components": [{"ui_type": "status", "description": message}],
         "choices": [{"delta": {"content": ""}, "index": 0}],
     }
 

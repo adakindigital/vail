@@ -1,72 +1,63 @@
 """
 Vail Gateway — session management routes
 
-Mounts on the main FastAPI app. All routes require the same API key auth
-as the chat completions endpoint.
-
 Routes:
-    GET    /v1/sessions              — list all sessions (newest first)
+    GET    /v1/sessions              — list sessions for the authenticated user
     GET    /v1/sessions/{session_id} — session metadata + full message history
+    PATCH  /v1/sessions/{session_id} — rename a session (title field)
     DELETE /v1/sessions/{session_id} — delete session and all its messages
 """
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
 from api import db as database
+from api.auth import get_current_user
 
 router = APIRouter()
 
 
-def _check_auth(authorization: str, vail_api_key: str) -> None:
-    if not vail_api_key:
-        return
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-    token = authorization.removeprefix("Bearer ").strip()
-    if token != vail_api_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+@router.get("/v1/sessions")
+async def list_sessions(user_id: str | None = Depends(get_current_user)):
+    sessions = await database.list_sessions(user_id)
+    return JSONResponse({"sessions": sessions, "count": len(sessions)})
 
 
-# The API key is injected at route registration time via a closure.
-# main.py calls build_router(vail_api_key) to get a configured router.
+@router.get("/v1/sessions/{session_id}")
+async def get_session(session_id: str, user_id: str | None = Depends(get_current_user)):
+    session = await database.get_session(session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return JSONResponse(session)
 
-def build_router(vail_api_key: str) -> APIRouter:
-    r = APIRouter()
 
-    @r.get("/v1/sessions")
-    async def list_sessions(authorization: str = Header(default="")):
-        _check_auth(authorization, vail_api_key)
-        sessions = await database.list_sessions()
-        return JSONResponse({"sessions": sessions, "count": len(sessions)})
+@router.patch("/v1/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    body: dict,
+    user_id: str | None = Depends(get_current_user),
+):
+    title = body.get("title")
+    if not title or not isinstance(title, str):
+        raise HTTPException(status_code=400, detail="body must include 'title' string")
 
-    @r.get("/v1/sessions/{session_id}")
-    async def get_session(session_id: str, authorization: str = Header(default="")):
-        _check_auth(authorization, vail_api_key)
-        session = await database.get_session(session_id)
-        if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-        return JSONResponse(session)
+    # Verify ownership before updating
+    session = await database.get_session(session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    @r.patch("/v1/sessions/{session_id}")
-    async def update_session(
-        session_id: str,
-        body: dict,
-        authorization: str = Header(default=""),
-    ):
-        _check_auth(authorization, vail_api_key)
-        title = body.get("title")
-        if not title or not isinstance(title, str):
-            raise HTTPException(status_code=400, detail="body must include 'title' string")
-        await database.set_session_title(session_id, title.strip())
-        return JSONResponse({"updated": True, "session_id": session_id})
+    await database.set_session_title(session_id, title.strip())
+    return JSONResponse({"updated": True, "session_id": session_id})
 
-    @r.delete("/v1/sessions/{session_id}")
-    async def delete_session(session_id: str, authorization: str = Header(default="")):
-        _check_auth(authorization, vail_api_key)
-        deleted = await database.delete_session(session_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Session not found")
-        return JSONResponse({"deleted": True, "session_id": session_id})
 
-    return r
+@router.delete("/v1/sessions/{session_id}")
+async def delete_session(session_id: str, user_id: str | None = Depends(get_current_user)):
+    deleted = await database.delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return JSONResponse({"deleted": True, "session_id": session_id})
+
+
+def build_router(_vail_api_key: str = "") -> APIRouter:
+    """Kept for backwards compatibility with main.py — returns the module router."""
+    return router

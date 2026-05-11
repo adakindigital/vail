@@ -1,107 +1,155 @@
 """
 Vail Gateway — database layer
 
-Single SQLite file in dev (VAIL_DB_URL=./vail_dev.db).
-Swap VAIL_DB_URL for a Postgres DSN in prod (Supabase, RDS).
+Postgres via asyncpg in all environments.
+Set VAIL_DB_URL to a Postgres DSN:
+    postgresql://user:password@host:5432/vail
 
-Schema (all CREATE IF NOT EXISTS — safe to run on existing DBs):
-  interaction_logs   — every request/response with latency + token counts
-  sessions           — named conversation threads
-  session_messages   — ordered message history per session
+For local dev:
+    docker run --rm -e POSTGRES_PASSWORD=vail -e POSTGRES_DB=vail -p 5432:5432 postgres:16
+
+Schema:
+    users              — registered accounts
+    interaction_logs   — every request/response with latency + token counts
+    sessions           — named conversation threads (owned by a user)
+    session_messages   — ordered message history per session (supports tool calling)
 """
 
 import json
 import logging
-import aiosqlite
-from datetime import datetime, timezone
+from typing import Optional
+
+import asyncpg
 
 log = logging.getLogger("vail.db")
 
-_db: aiosqlite.Connection | None = None
+_pool: asyncpg.Pool | None = None
 
 
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
 
-_CREATE_INTERACTION_LOGS = """
-CREATE TABLE IF NOT EXISTS interaction_logs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at    TEXT    NOT NULL,
-    session_id    TEXT,
-    model         TEXT    NOT NULL,
-    messages_json TEXT    NOT NULL,
-    response_text TEXT,
-    tokens_in     INTEGER,
-    tokens_out    INTEGER,
-    latency_ms    REAL,
-    stream        INTEGER NOT NULL DEFAULT 0,
-    error         TEXT,
-    consent       INTEGER NOT NULL DEFAULT 0
+_CREATE_USERS = """
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT        PRIMARY KEY,
+    email         TEXT        NOT NULL UNIQUE,
+    password_hash TEXT        NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
 
 _CREATE_SESSIONS = """
 CREATE TABLE IF NOT EXISTS sessions (
-    id            TEXT    PRIMARY KEY,
-    created_at    TEXT    NOT NULL,
-    updated_at    TEXT    NOT NULL,
+    id            TEXT        PRIMARY KEY,
+    user_id       TEXT        REFERENCES users(id),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     title         TEXT,
-    message_count INTEGER NOT NULL DEFAULT 0
+    message_count INTEGER     NOT NULL DEFAULT 0
 );
 """
 
 _CREATE_SESSION_MESSAGES = """
 CREATE TABLE IF NOT EXISTS session_messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    sequence    INTEGER NOT NULL,
-    role        TEXT    NOT NULL,
-    content     TEXT,
-    tool_calls  TEXT,
+    id           SERIAL      PRIMARY KEY,
+    session_id   TEXT        NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    sequence     INTEGER     NOT NULL,
+    role         TEXT        NOT NULL,
+    content      TEXT,
+    tool_calls   TEXT,
     tool_call_id TEXT,
-    name        TEXT,
-    model       TEXT,
-    created_at  TEXT    NOT NULL
+    name         TEXT,
+    model        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
 
-# Migrations — columns added after initial schema. Safe to run repeatedly.
-_MIGRATIONS = [
-    "ALTER TABLE interaction_logs ADD COLUMN session_id TEXT",
-    "ALTER TABLE interaction_logs ADD COLUMN tokens_in INTEGER",
-    "ALTER TABLE interaction_logs ADD COLUMN tokens_out INTEGER",
-    "ALTER TABLE session_messages ADD COLUMN model TEXT",
-    "ALTER TABLE session_messages ADD COLUMN tool_calls TEXT",
-    "ALTER TABLE session_messages ADD COLUMN tool_call_id TEXT",
-    "ALTER TABLE session_messages ADD COLUMN name TEXT",
+_CREATE_INTERACTION_LOGS = """
+CREATE TABLE IF NOT EXISTS interaction_logs (
+    id            SERIAL      PRIMARY KEY,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    user_id       TEXT        REFERENCES users(id),
+    session_id    TEXT,
+    model         TEXT        NOT NULL,
+    messages_json TEXT        NOT NULL,
+    response_text TEXT,
+    tokens_in     INTEGER,
+    tokens_out    INTEGER,
+    latency_ms    REAL,
+    stream        BOOLEAN     NOT NULL DEFAULT FALSE,
+    error         TEXT,
+    consent       BOOLEAN     NOT NULL DEFAULT FALSE
+);
+"""
+
+_CREATE_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)",
+    "CREATE INDEX IF NOT EXISTS sessions_updated_at_idx ON sessions(updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS session_messages_session_seq_idx ON session_messages(session_id, sequence)",
+    "CREATE INDEX IF NOT EXISTS interaction_logs_user_id_idx ON interaction_logs(user_id)",
 ]
 
 
-async def open_db(db_url: str) -> aiosqlite.Connection:
-    db = await aiosqlite.connect(db_url)
-    db.row_factory = aiosqlite.Row
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
 
-    await db.execute("PRAGMA foreign_keys = ON")
-    await db.execute(_CREATE_INTERACTION_LOGS)
-    await db.execute(_CREATE_SESSIONS)
-    await db.execute(_CREATE_SESSION_MESSAGES)
-    await db.commit()
-
-    # Run migrations — ignore "duplicate column" errors (idempotent)
-    for migration in _MIGRATIONS:
-        try:
-            await db.execute(migration)
-            await db.commit()
-        except Exception:
-            pass
-
-    log.info("db open  path=%s", db_url)
-    return db
+async def open_db(db_url: str) -> asyncpg.Pool:
+    pool = await asyncpg.create_pool(db_url, min_size=1, max_size=10)
+    async with pool.acquire() as conn:
+        await conn.execute(_CREATE_USERS)
+        await conn.execute(_CREATE_SESSIONS)
+        await conn.execute(_CREATE_SESSION_MESSAGES)
+        await conn.execute(_CREATE_INTERACTION_LOGS)
+        for stmt in _CREATE_INDEXES:
+            await conn.execute(stmt)
+    safe = db_url.split("@")[-1] if "@" in db_url else db_url
+    log.info("db open  host=%s", safe)
+    return pool
 
 
-async def close_db(db: aiosqlite.Connection) -> None:
-    await db.close()
+async def close_db(pool: asyncpg.Pool) -> None:
+    await pool.close()
+
+
+def set_db(pool: asyncpg.Pool) -> None:
+    global _pool
+    _pool = pool
+
+
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+
+async def create_user(user_id: str, email: str, password_hash: str) -> bool:
+    """Insert a new user. Returns False if the email is already taken."""
+    pool = _pool
+    if pool is None:
+        return False
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)",
+                user_id, email, password_hash,
+            )
+        return True
+    except asyncpg.UniqueViolationError:
+        return False
+    except Exception as exc:
+        log.error("create_user failed: %s", exc)
+        return False
+
+
+async def get_user_by_email(email: str) -> dict | None:
+    pool = _pool
+    if pool is None:
+        return None
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, email, password_hash FROM users WHERE email = $1", email
+        )
+    return dict(row) if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -110,145 +158,138 @@ async def close_db(db: aiosqlite.Connection) -> None:
 
 async def log_interaction(
     *,
-    session_id: str | None,
+    user_id: Optional[str],
+    session_id: Optional[str],
     model: str,
     messages: list,
-    response_text: str | None,
-    tokens_in: int | None,
-    tokens_out: int | None,
+    response_text: Optional[str],
+    tokens_in: Optional[int],
+    tokens_out: Optional[int],
     latency_ms: float,
     stream: bool,
-    error: str | None = None,
+    error: Optional[str] = None,
 ) -> None:
     """Write one row to interaction_logs. Never raises — fire and forget."""
-    db = _db
-    if db is None:
+    pool = _pool
+    if pool is None:
         return
     try:
-        await db.execute(
-            """
-            INSERT INTO interaction_logs
-                (created_at, session_id, model, messages_json, response_text,
-                 tokens_in, tokens_out, latency_ms, stream, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                datetime.now(timezone.utc).isoformat(),
-                session_id,
-                model,
-                json.dumps(messages),
-                response_text,
-                tokens_in,
-                tokens_out,
-                latency_ms,
-                int(stream),
-                error,
-            ),
-        )
-        await db.commit()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO interaction_logs
+                    (user_id, session_id, model, messages_json, response_text,
+                     tokens_in, tokens_out, latency_ms, stream, error)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """,
+                user_id, session_id, model, json.dumps(messages),
+                response_text, tokens_in, tokens_out, latency_ms, stream, error,
+            )
     except Exception as exc:
-        log.error("db write failed: %s", exc)
+        log.error("log_interaction failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
 
-async def get_or_create_session(session_id: str) -> None:
-    """Ensure a session row exists. Creates it if not found."""
-    db = _db
-    if db is None:
+async def get_or_create_session(session_id: str, user_id: Optional[str] = None) -> None:
+    pool = _pool
+    if pool is None:
         return
-    now = datetime.now(timezone.utc).isoformat()
-    await db.execute(
-        """
-        INSERT OR IGNORE INTO sessions (id, created_at, updated_at, title, message_count)
-        VALUES (?, ?, ?, NULL, 0)
-        """,
-        (session_id, now, now),
-    )
-    await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO sessions (id, user_id) VALUES ($1, $2)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            session_id, user_id,
+        )
 
 
 async def get_session_messages(session_id: str) -> list[dict]:
-    """Return all messages for a session, ordered by sequence."""
-    db = _db
-    if db is None:
+    pool = _pool
+    if pool is None:
         return []
-    async with db.execute(
-        "SELECT role, content, model, tool_calls, tool_call_id, name FROM session_messages WHERE session_id = ? ORDER BY sequence ASC",
-        (session_id,),
-    ) as cursor:
-        rows = await cursor.fetchall()
-    
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT role, content, model, tool_calls, tool_call_id, name
+            FROM session_messages WHERE session_id = $1 ORDER BY sequence ASC
+            """,
+            session_id,
+        )
     messages = []
-    for row in rows:
-        msg = {"role": row["role"], "content": row["content"]}
-        if row["model"]: msg["model"] = row["model"]
-        if row["tool_calls"]: msg["tool_calls"] = json.loads(row["tool_calls"])
-        if row["tool_call_id"]: msg["tool_call_id"] = row["tool_call_id"]
-        if row["name"]: msg["name"] = row["name"]
+    for r in rows:
+        msg: dict = {"role": r["role"], "content": r["content"]}
+        if r["model"]:
+            msg["model"] = r["model"]
+        if r["tool_calls"]:
+            msg["tool_calls"] = json.loads(r["tool_calls"])
+        if r["tool_call_id"]:
+            msg["tool_call_id"] = r["tool_call_id"]
+        if r["name"]:
+            msg["name"] = r["name"]
         messages.append(msg)
     return messages
 
 
 async def append_session_messages(session_id: str, messages: list[dict]) -> bool:
-    """Append multiple messages to a session in one transaction.
-    Returns True if this added the first messages to the session.
+    """Append multiple messages (supports tool call roles) in one transaction.
+
+    Returns True if this was the first messages added to the session.
     """
-    db = _db
-    if db is None:
+    pool = _pool
+    if pool is None:
         return False
 
-    async with db.execute(
-        "SELECT message_count, COALESCE(MAX(sequence), 0) AS max_seq FROM sessions LEFT JOIN session_messages ON session_messages.session_id = sessions.id WHERE sessions.id = ?",
-        (session_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
-    
-    is_first = (row["message_count"] == 0) if row else False
-    next_seq = (row["max_seq"] if row else 0) + 1
-    now = datetime.now(timezone.utc).isoformat()
-
-    for i, msg in enumerate(messages):
-        role = msg.get("role")
-        content = msg.get("content")
-        model = msg.get("model")
-        tool_calls = msg.get("tool_calls")
-        tc_id = msg.get("tool_call_id")
-        name = msg.get("name")
-
-        await db.execute(
-            """
-            INSERT INTO session_messages (session_id, sequence, role, content, model, tool_calls, tool_call_id, name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT s.message_count, COALESCE(MAX(sm.sequence), 0) AS max_seq
+                FROM sessions s
+                LEFT JOIN session_messages sm ON sm.session_id = s.id
+                WHERE s.id = $1
+                GROUP BY s.id
+                """,
                 session_id,
-                next_seq + i,
-                role,
-                content if content is not None else "",
-                model,
-                json.dumps(tool_calls) if tool_calls else None,
-                tc_id,
-                name,
-                now,
-            ),
-        )
+            )
+            is_first = (row["message_count"] == 0) if row else False
+            next_seq = (row["max_seq"] if row else 0) + 1
 
-    await db.execute(
-        "UPDATE sessions SET updated_at = ?, message_count = message_count + ? WHERE id = ?",
-        (now, len(messages), session_id),
-    )
-    # Set fallback title if not present
-    if is_first:
-        first_user = next((m.get("content") for m in messages if m.get("role") == "user"), "New Session")
-        await db.execute(
-            "UPDATE sessions SET title = ? WHERE id = ? AND title IS NULL",
-            (str(first_user)[:80], session_id),
-        )
+            for i, msg in enumerate(messages):
+                tool_calls = msg.get("tool_calls")
+                await conn.execute(
+                    """
+                    INSERT INTO session_messages
+                        (session_id, sequence, role, content, model, tool_calls, tool_call_id, name)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    session_id,
+                    next_seq + i,
+                    msg.get("role"),
+                    msg.get("content"),
+                    msg.get("model"),
+                    json.dumps(tool_calls) if tool_calls else None,
+                    msg.get("tool_call_id"),
+                    msg.get("name"),
+                )
 
-    await db.commit()
+            await conn.execute(
+                "UPDATE sessions SET updated_at = NOW(), message_count = message_count + $1 WHERE id = $2",
+                len(messages), session_id,
+            )
+
+            if is_first:
+                first_user = next(
+                    (m.get("content") for m in messages if m.get("role") == "user"), "New Session"
+                )
+                await conn.execute(
+                    "UPDATE sessions SET title = $1 WHERE id = $2 AND title IS NULL",
+                    str(first_user)[:80], session_id,
+                )
+
     return is_first
 
 
@@ -258,70 +299,93 @@ async def append_session_turn(
     assistant_content: str,
     model: str,
 ) -> bool:
-    """Append a user+assistant turn and update session metadata.
-
-    Returns True if this was the first turn in the session (message_count was 0),
-    so callers can trigger title generation only once.
-    """
-    messages = [
+    """Convenience wrapper for a simple user+assistant turn."""
+    return await append_session_messages(session_id, [
         {"role": "user", "content": user_content},
-        {"role": "assistant", "content": assistant_content, "model": model}
-    ]
-    return await append_session_messages(session_id, messages)
+        {"role": "assistant", "content": assistant_content, "model": model},
+    ])
 
 
 async def set_session_title(session_id: str, title: str) -> None:
-    """Overwrite the session title — called after model-generated title arrives."""
-    db = _db
-    if db is None:
+    pool = _pool
+    if pool is None:
         return
-    await db.execute(
-        "UPDATE sessions SET title = ? WHERE id = ?",
-        (title, session_id),
-    )
-    await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE sessions SET title = $1 WHERE id = $2",
+            title, session_id,
+        )
 
 
-async def list_sessions() -> list[dict]:
-    db = _db
-    if db is None:
+async def list_sessions(user_id: Optional[str] = None) -> list[dict]:
+    """Return sessions for a user. If user_id is None (CLI), returns all sessions."""
+    pool = _pool
+    if pool is None:
         return []
-    async with db.execute(
-        "SELECT id, created_at, updated_at, title, message_count FROM sessions ORDER BY updated_at DESC"
-    ) as cursor:
-        rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    async with pool.acquire() as conn:
+        if user_id:
+            rows = await conn.fetch(
+                "SELECT id, created_at, updated_at, title, message_count FROM sessions WHERE user_id = $1 ORDER BY updated_at DESC",
+                user_id,
+            )
+        else:
+            rows = await conn.fetch(
+                "SELECT id, created_at, updated_at, title, message_count FROM sessions ORDER BY updated_at DESC"
+            )
+    return [
+        {
+            "id": r["id"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "title": r["title"],
+            "message_count": r["message_count"],
+        }
+        for r in rows
+    ]
 
 
-async def get_session(session_id: str) -> dict | None:
-    db = _db
-    if db is None:
+async def get_session(session_id: str, user_id: Optional[str] = None) -> dict | None:
+    """Fetch a session. With user_id, enforces ownership — returns None if not owned."""
+    pool = _pool
+    if pool is None:
         return None
-    async with db.execute(
-        "SELECT id, created_at, updated_at, title, message_count FROM sessions WHERE id = ?",
-        (session_id,),
-    ) as cursor:
-        row = await cursor.fetchone()
+    async with pool.acquire() as conn:
+        if user_id:
+            row = await conn.fetchrow(
+                "SELECT id, created_at, updated_at, title, message_count FROM sessions WHERE id = $1 AND user_id = $2",
+                session_id, user_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                "SELECT id, created_at, updated_at, title, message_count FROM sessions WHERE id = $1",
+                session_id,
+            )
     if row is None:
         return None
     messages = await get_session_messages(session_id)
-    return {**dict(row), "messages": messages}
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+        "title": row["title"],
+        "message_count": row["message_count"],
+        "messages": messages,
+    }
 
 
-async def delete_session(session_id: str) -> bool:
-    db = _db
-    if db is None:
+async def delete_session(session_id: str, user_id: Optional[str] = None) -> bool:
+    """Delete a session. With user_id, only deletes if owned by that user."""
+    pool = _pool
+    if pool is None:
         return False
-    async with db.execute("DELETE FROM sessions WHERE id = ?", (session_id,)) as cursor:
-        deleted = cursor.rowcount > 0
-    await db.commit()
-    return deleted
-
-
-# ---------------------------------------------------------------------------
-# Module-level handle — set by main.py lifespan
-# ---------------------------------------------------------------------------
-
-def set_db(db: aiosqlite.Connection) -> None:
-    global _db
-    _db = db
+    async with pool.acquire() as conn:
+        if user_id:
+            result = await conn.execute(
+                "DELETE FROM sessions WHERE id = $1 AND user_id = $2",
+                session_id, user_id,
+            )
+        else:
+            result = await conn.execute(
+                "DELETE FROM sessions WHERE id = $1", session_id
+            )
+    return result.split()[-1] != "0"
