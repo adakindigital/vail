@@ -2,13 +2,13 @@
 aegis
 dist/
 
-# Model weights — never commit these
+# Model weights — never commit these (top-level /models/ dir only)
 *.gguf
 *.safetensors
 *.bin
 *.pt
 *.pth
-models/
+/models/
 
 # Config with secrets
 .env
