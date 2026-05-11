@@ -8,6 +8,8 @@ class AppConfig {
   static const String _keyTheme = 'vail_theme';
   static const String _keyModel = 'vail_model';
   static const String _keyIsPro = 'vail_is_pro';
+  static const String _keyToken = 'vail_token';
+  static const String _keyUserId = 'vail_user_id';
 
   // Override at build time: flutter build web --dart-define=GATEWAY_URL=https://...
   static const String defaultEndpoint = String.fromEnvironment(
@@ -36,4 +38,15 @@ class AppConfig {
   Future<void> setTheme(String value) => _prefs.setString(_keyTheme, value);
   Future<void> setModel(String value) => _prefs.setString(_keyModel, value);
   Future<void> setIsPro(bool value) => _prefs.setBool(_keyIsPro, value);
+
+  String get token => _prefs.getString(_keyToken) ?? '';
+  String get userId => _prefs.getString(_keyUserId) ?? '';
+  bool get isAuthenticated => token.isNotEmpty;
+
+  Future<void> setToken(String value) => _prefs.setString(_keyToken, value);
+  Future<void> setUserId(String value) => _prefs.setString(_keyUserId, value);
+  Future<void> clearAuth() async {
+    await _prefs.remove(_keyToken);
+    await _prefs.remove(_keyUserId);
+  }
 }

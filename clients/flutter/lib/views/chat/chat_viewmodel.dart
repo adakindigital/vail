@@ -34,7 +34,7 @@ class ChatViewModel extends ChangeNotifier {
   }
 
   late VailClient _client = _buildClient();
-  VailClient _buildClient() => VailClient(endpoint: _config.endpoint, apiKey: _config.apiKey, sessionId: _sessionId);
+  VailClient _buildClient() => VailClient(endpoint: _config.endpoint, apiKey: _config.token, sessionId: _sessionId);
   bool get isSending => _state == ChatState.sending;
 
   @override

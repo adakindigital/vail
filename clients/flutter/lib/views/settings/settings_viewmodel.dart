@@ -3,11 +3,13 @@ import 'package:get_it/get_it.dart';
 import 'package:vail_app/core/config/app_config.dart';
 import 'package:vail_app/core/constants/app_constants.dart';
 import 'package:vail_app/data/services/vail_client.dart';
+import 'package:vail_app/views/auth/auth_viewmodel.dart';
 
 enum GatewayStatus { unknown, checking, online, offline }
 
 class SettingsViewModel extends ChangeNotifier {
   final AppConfig _config = GetIt.I<AppConfig>();
+  final AuthViewModel _auth = GetIt.I<AuthViewModel>();
 
   late String _endpoint = _config.endpoint;
   late String _apiKey = _config.apiKey;
@@ -22,6 +24,12 @@ class SettingsViewModel extends ChangeNotifier {
   GatewayStatus get gatewayStatus => _gatewayStatus;
 
   List<String> get availableModels => AppConstants.modelTiers;
+  String get userEmail => _config.userId;
+
+  Future<void> logout() async {
+    await _auth.logout();
+    notifyListeners();
+  }
 
   Future<void> setIsPro(bool value) async {
     if (_isPro == value) return;
@@ -56,7 +64,7 @@ class SettingsViewModel extends ChangeNotifier {
 
     final client = VailClient(
       endpoint: _endpoint,
-      apiKey: _apiKey,
+      apiKey: _config.token,
       sessionId: '',
     );
     final isOnline = await client.checkHealth();

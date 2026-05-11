@@ -32,7 +32,7 @@ class SessionsViewModel extends ChangeNotifier {
     try {
       final client = VailClient(
         endpoint: _config.endpoint,
-        apiKey: _config.apiKey,
+        apiKey: _config.token,
         sessionId: '',
       );
       final raw = await client.listSessions();
@@ -56,7 +56,7 @@ class SessionsViewModel extends ChangeNotifier {
     try {
       final client = VailClient(
         endpoint: _config.endpoint,
-        apiKey: _config.apiKey,
+        apiKey: _config.token,
         sessionId: '',
       );
       final raw = await client.listSessions();
@@ -71,7 +71,7 @@ class SessionsViewModel extends ChangeNotifier {
     try {
       final client = VailClient(
         endpoint: _config.endpoint,
-        apiKey: _config.apiKey,
+        apiKey: _config.token,
         sessionId: '',
       );
       await client.deleteSession(sessionId);

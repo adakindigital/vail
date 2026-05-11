@@ -7,6 +7,7 @@ import 'package:vail_app/core/widgets/vail_dialog.dart';
 import 'package:vail_app/views/chat/chat_viewmodel.dart';
 import 'package:vail_app/views/settings/settings_viewmodel.dart';
 
+
 /// Mobile settings UI — scrollable settings with status-bar-aware header.
 ///
 /// Rendered by [SettingsView] via [ScreenTypeLayout.builder].
@@ -72,6 +73,10 @@ class _SettingsBody extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _SectionLabel('ACCOUNT'),
+          SizedBox(height: VailTheme.md),
+          _AccountCard(),
+          SizedBox(height: VailTheme.xxl),
           _SectionLabel('API CONFIGURATION'),
           SizedBox(height: VailTheme.md),
           _ApiKeyField(),
@@ -806,6 +811,45 @@ class _DarkTextField extends StatelessWidget {
             horizontal: VailTheme.md,
             vertical: VailTheme.md,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Account card ──────────────────────────────────────────────────────────────
+
+class _AccountCard extends StatelessWidget {
+  const _AccountCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: VailTheme.lg),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(VailTheme.lg),
+        decoration: BoxDecoration(
+          color: VailTheme.surfaceContainerLow,
+          border: Border.all(color: VailTheme.border),
+          borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.person_outline_rounded, color: VailTheme.textSecondary, size: 18),
+            const SizedBox(width: VailTheme.md),
+            Expanded(
+              child: Text(
+                vm.userEmail.isNotEmpty ? vm.userEmail : 'Signed in',
+                style: VailTheme.body.copyWith(color: VailTheme.textSecondary),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: VailTheme.md),
+            VailButton.destructive(label: 'SIGN OUT', onTap: () => vm.logout()),
+          ],
         ),
       ),
     );

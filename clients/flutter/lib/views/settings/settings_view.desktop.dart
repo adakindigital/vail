@@ -23,6 +23,10 @@ class SettingsViewDesktop extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const _SectionLabel('ACCOUNT'),
+                const SizedBox(height: VailTheme.md),
+                const _AccountCard(),
+                const SizedBox(height: VailTheme.xxl),
                 const _SectionLabel('API CONFIGURATION'),
                 const SizedBox(height: VailTheme.md),
                 const _ApiKeyField(),
@@ -339,6 +343,40 @@ class _AboutRow extends StatelessWidget {
   const _AboutRow({required this.label, required this.value});
   @override
   Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 4), child: Row(children: [SizedBox(width: 60, child: Text(label, style: VailTheme.micro)), Expanded(child: Text(value, style: VailTheme.bodySmall.copyWith(fontSize: 10)))]));
+}
+
+class _AccountCard extends StatelessWidget {
+  const _AccountCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(VailTheme.lg),
+      decoration: BoxDecoration(
+        color: VailTheme.surfaceContainerLow.withValues(alpha: 0.4),
+        border: Border.all(color: VailTheme.ghostBorder),
+        borderRadius: BorderRadius.circular(VailTheme.radiusMd),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.person_outline_rounded, color: VailTheme.onSurfaceVariant, size: 18),
+          const SizedBox(width: VailTheme.md),
+          Expanded(
+            child: Text(
+              vm.userEmail.isNotEmpty ? vm.userEmail : 'Signed in',
+              style: VailTheme.bodySmall,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: VailTheme.md),
+          VailButton.destructive(label: 'SIGN OUT', onTap: () => vm.logout()),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProPlanToggle extends StatelessWidget {
