@@ -16,9 +16,10 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+import bcrypt as _bcrypt
+
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
-from passlib.context import CryptContext
 from jose import JWTError, jwt
 
 from api import db as database
@@ -28,15 +29,13 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_DAYS = int(os.getenv("VAIL_JWT_EXPIRY_DAYS", "30"))
 _VAIL_API_KEY = os.getenv("VAIL_API_KEY", "")
 
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(plain: str) -> str:
-    return _pwd_ctx.hash(plain)
+    return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain, hashed)
+    return _bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(user_id: str) -> str:
