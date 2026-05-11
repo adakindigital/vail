@@ -9,7 +9,11 @@ class AppConfig {
   static const String _keyModel = 'vail_model';
   static const String _keyIsPro = 'vail_is_pro';
 
-  static const String defaultEndpoint = 'http://localhost:9090';
+  // Override at build time: flutter build web --dart-define=GATEWAY_URL=https://...
+  static const String defaultEndpoint = String.fromEnvironment(
+    'GATEWAY_URL',
+    defaultValue: 'http://localhost:9090',
+  );
   static const String defaultModel = 'vail-lite';
 
   final SharedPreferences _prefs;
